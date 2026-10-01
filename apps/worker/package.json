@@ -1,0 +1,21 @@
+{
+  "name": "@mh/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsup src/index.ts --format esm --target node20 --out-dir dist --clean --noExternal @mh/shared --noExternal @mh/core --noExternal @mh/render --noExternal @mh/db",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mh/core": "workspace:*",
+    "@mh/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2"
+  }
+}

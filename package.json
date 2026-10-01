@@ -1,0 +1,36 @@
+{
+  "name": "marketing-hub",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:server": "pnpm --filter @mh/server dev",
+    "dev:worker": "pnpm --filter @mh/worker dev",
+    "dev:desktop": "pnpm --filter @mh/desktop dev",
+    "dev:db": "pnpm --filter @mh/db dev-db",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @mh/db generate",
+    "db:migrate": "pnpm --filter @mh/db migrate",
+    "db:deploy": "pnpm --filter @mh/db run migrate:deploy",
+    "db:seed": "pnpm --filter @mh/db seed",
+    "dist:desktop": "pnpm --filter @mh/desktop dist"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "electron",
+      "esbuild",
+      "sharp",
+      "msgpackr-extract"
+    ]
+  }
+}

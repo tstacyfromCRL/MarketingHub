@@ -1,0 +1,65 @@
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Plus, Trash2 } from 'lucide-react';
+import type { BrandProfileInput } from '@mh/shared';
+import { api, errorMessage, queryClient } from '../lib/api';
+import { BrandFileUploader, ColorTiersEditor } from '../components/BrandKit';
+import { Button, Card, ErrorText, Field, PageHeader, Spinner } from '../components/ui';
+
+type Kit = Pick<BrandProfileInput, 'colors' | 'fonts' | 'visualIdentity'>;
+
+/** Logos, tiered colors, fonts and visual style used for every design and generated image. */
+export function BrandKitPage() {
+  const { data } = useQuery({ queryKey: ['brand'], queryFn: () => api.get<BrandProfileInput>('/brand') });
+  const [kit, setKit] = useState<Kit | null>(null);
+  useEffect(() => {
+    if (data) setKit({ colors: data.colors, fonts: data.fonts, visualIdentity: data.visualIdentity });
+  }, [data]);
+  const save = useMutation({
+    mutationFn: () => api.patch<BrandProfileInput>('/brand', kit),
+    onSuccess: (b) => queryClient.setQueryData(['brand'], b),
+  });
+  if (!kit) return <Spinner />;
+  const set = <K extends keyof Kit>(k: K, v: Kit[K]) => setKit({ ...kit, [k]: v });
+
+  return (
+    <div>
+      <PageHeader
+        title="Brand kit"
+        subtitle="Logos, colors and fonts used in every design. Primary colors are used first."
+        actions={<>
+          {save.isSuccess && <span className="text-sm text-emerald-400">Saved</span>}
+          <Button onClick={() => save.mutate()} loading={save.isPending}>Save brand kit</Button>
+        </>}
+      />
+      <ErrorText error={save.error ? errorMessage(save.error) : null} />
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
+          <Card title="Colors"><ColorTiersEditor colors={kit.colors} onChange={(c) => set('colors', c)} /></Card>
+          <Card title="Fonts">
+            <div className="space-y-2">
+              {kit.fonts.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input className="input w-40" placeholder="Role (Headline)" value={f.role} onChange={(e) => set('fonts', kit.fonts.map((x, j) => (j === i ? { ...x, role: e.target.value } : x)))} />
+                  <input className="input flex-1" placeholder="Font family" value={f.family} onChange={(e) => set('fonts', kit.fonts.map((x, j) => (j === i ? { ...x, family: e.target.value } : x)))} style={{ fontFamily: f.family }} />
+                  <Button size="sm" variant="ghost" onClick={() => set('fonts', kit.fonts.filter((_, j) => j !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </div>
+              ))}
+              <Button size="sm" variant="secondary" onClick={() => set('fonts', [...kit.fonts, { role: '', family: '' }])}><Plus className="h-3.5 w-3.5" /> Font</Button>
+            </div>
+          </Card>
+          <Card title="Visual style">
+            <Field label="Visual identity" hint="Photography style, layout rules, logo usage. Used for generated images and graphics.">
+              <textarea className="input" rows={4} value={kit.visualIdentity} onChange={(e) => set('visualIdentity', e.target.value)} />
+            </Field>
+          </Card>
+        </div>
+        <div className="space-y-6">
+          <Card title="Logos"><BrandFileUploader kind="LOGO" accept="image/*,.svg" /></Card>
+          <Card title="Brand graphics"><BrandFileUploader kind="GRAPHIC" accept="image/*,.svg" /></Card>
+          <Card title="Font files"><BrandFileUploader kind="FONT" accept=".ttf,.otf,.woff,.woff2" /></Card>
+        </div>
+      </div>
+    </div>
+  );
+}

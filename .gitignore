@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+release/
+.turbo/
+.env
+*.log
+.data/
+packages/db/.pglite/

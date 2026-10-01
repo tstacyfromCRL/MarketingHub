@@ -1,0 +1,104 @@
+import { describe, expect, it } from 'vitest';
+import { availableActions, transitionPost } from './postWorkflow';
+import { planCampaignSlots } from './campaign';
+import { resolveLibraryPath, toRelPath, toUncPath } from './library';
+import { brandColorsSchema, paletteInOrder, toHex } from './colors';
+
+describe('brand colors', () => {
+  it('converts hex, RGB and CMYK to screen hex', () => {
+    expect(toHex('HEX', '#1A2B3C')).toBe('#1a2b3c');
+    expect(toHex('HEX', 'abc')).toBe('#aabbcc');
+    expect(toHex('RGB', 'rgb(26, 43, 60)')).toBe('#1a2b3c');
+    expect(toHex('RGB', '0 128 255')).toBe('#0080ff');
+    expect(toHex('CMYK', '0, 0, 0, 0')).toBe('#ffffff');
+    expect(toHex('CMYK', '100 0 100 0')).toBe('#00ff00');
+    expect(toHex('CMYK', '0%, 0%, 0%, 100%')).toBe('#000000');
+  });
+
+  it('rejects unreadable values and never guesses Pantone', () => {
+    expect(toHex('HEX', '#12345')).toBeNull();
+    expect(toHex('RGB', '300, 0, 0')).toBeNull();
+    expect(toHex('CMYK', '10, 20, 30')).toBeNull();
+    expect(toHex('PANTONE', '186 C')).toBeNull();
+  });
+
+  it('upgrades old {name, hex} colors, caps each tier at 20 and orders the palette', () => {
+    const old = brandColorsSchema.parse([{ name: 'Navy', hex: '#000080' }]);
+    expect(old[0]).toMatchObject({ tier: 'PRIMARY', format: 'HEX' });
+    const many = Array.from({ length: 21 }, () => ({ hex: '#ffffff', tier: 'SECONDARY' }));
+    expect(brandColorsSchema.safeParse(many).success).toBe(false);
+    expect(brandColorsSchema.safeParse(many.slice(1)).success).toBe(true);
+    expect(paletteInOrder(brandColorsSchema.parse([{ hex: '#333333', tier: 'TERTIARY' }, { hex: '#111111', tier: 'PRIMARY' }]))).toEqual(['#111111', '#333333']);
+  });
+});
+
+describe('post workflow', () => {
+  it('follows creator -> manager -> scheduled -> posted', () => {
+    const creator = { role: 'CREATOR' as const, isCreator: true };
+    const manager = { role: 'MANAGER' as const, isCreator: false };
+    expect(transitionPost('DRAFT', 'creatorApprove', creator)).toEqual({ ok: true, to: 'CREATOR_APPROVED' });
+    expect(transitionPost('CREATOR_APPROVED', 'startReview', creator).ok).toBe(false);
+    expect(transitionPost('CREATOR_APPROVED', 'startReview', manager)).toEqual({ ok: true, to: 'IN_REVIEW' });
+    expect(transitionPost('IN_REVIEW', 'returnToCreator', manager)).toEqual({ ok: true, to: 'DRAFT' });
+    expect(transitionPost('IN_REVIEW', 'approve', manager)).toEqual({ ok: true, to: 'SCHEDULED' });
+    expect(transitionPost('SCHEDULED', 'publishSucceeded', manager).ok).toBe(false);
+    expect(transitionPost('SCHEDULED', 'publishSucceeded', { role: 'SYSTEM', isCreator: false }).ok).toBe(true);
+  });
+
+  it('does not let another creator approve someone else draft', () => {
+    expect(transitionPost('DRAFT', 'creatorApprove', { role: 'CREATOR', isCreator: false }).ok).toBe(false);
+    expect(availableActions('DRAFT', { role: 'CREATOR', isCreator: true })).toEqual(['creatorApprove']);
+  });
+});
+
+describe('campaign slots', () => {
+  it('schedules posts on selected weekdays at local times', () => {
+    // 2026-10-05 is a Monday. Mon + Wed, 10:00 local, UTC-4.
+    const slots = planCampaignSlots({
+      startDate: '2026-10-05',
+      endDate: '2026-10-11',
+      postDays: [1, 3],
+      postTimes: ['10:00'],
+      utcOffsetMinutes: -240,
+    });
+    expect(slots.map((d) => d.toISOString())).toEqual(['2026-10-05T14:00:00.000Z', '2026-10-07T14:00:00.000Z']);
+  });
+});
+
+describe('toRelPath', () => {
+  it('produces the same relative path for mapped drives and UNC paths', () => {
+    expect(toRelPath('M:\\Media', 'M:\\Media\\Products\\hero.jpg')).toBe('Products/hero.jpg');
+    expect(toRelPath('\\\\srv\\share\\Media\\', '\\\\srv\\share\\Media\\Products\\hero.jpg')).toBe('Products/hero.jpg');
+    expect(() => toRelPath('M:\\Media', 'M:\\Other\\x.jpg')).toThrow();
+  });
+});
+
+describe('library drive resolution', () => {
+  const share = '\\\\CRL-PGH-LOGAWS-3.crl.local\\marketing-and-media';
+  const adminPc = [{ letter: 'V', remote: share }, { letter: 'X', remote: '\\\\crl-pgh-data-1\\Z' }];
+
+  it('records the network path of the folder the admin picked', () => {
+    expect(toUncPath('V:\\', adminPc)).toBe(share);
+    expect(toUncPath('V:\\Brand Assets', adminPc)).toBe(`${share}\\Brand Assets`);
+    expect(toUncPath('C:\\Temp', adminPc)).toBeNull();
+  });
+
+  it('finds the drive on another PC even under a different letter', () => {
+    const loc = { rootPath: 'V:\\Brand Assets', uncPath: `${share}\\Brand Assets` };
+    expect(resolveLibraryPath(loc, adminPc)).toBe('V:\\Brand Assets');
+    expect(resolveLibraryPath(loc, [{ letter: 'm', remote: share.toLowerCase() + '\\' }])).toBe('M:\\Brand Assets');
+    expect(resolveLibraryPath({ rootPath: 'V:\\', uncPath: share }, [{ letter: 'M', remote: share }])).toBe('M:\\');
+  });
+
+  it('returns null when the share is not mapped on this PC', () => {
+    const loc = { rootPath: 'V:\\', uncPath: share };
+    expect(resolveLibraryPath(loc, [])).toBeNull();
+    expect(resolveLibraryPath(loc, [{ letter: 'V', remote: '\\\\other\\share' }])).toBeNull();
+    expect(resolveLibraryPath({ rootPath: 'V:\\', uncPath: share }, [{ letter: 'V', remote: `${share}-archive` }])).toBeNull();
+  });
+
+  it('uses a network path directly when the admin picked one without a drive letter', () => {
+    const unc = `${share}\\Photos`;
+    expect(resolveLibraryPath({ rootPath: unc, uncPath: unc }, [])).toBe(unc);
+  });
+});

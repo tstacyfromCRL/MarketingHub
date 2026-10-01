@@ -1,0 +1,66 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Dev database (PGlite)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/packages/db",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/packages/db/scripts/dev-db.ts",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": { "group": "2_parts", "order": 1 }
+    },
+    {
+      "name": "API server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/apps/server",
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/apps/server/src/index.ts",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "presentation": { "group": "2_parts", "order": 2 }
+    },
+    {
+      "name": "Desktop: main process",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/apps/desktop",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron-vite",
+      "windows": {
+        "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron-vite.CMD"
+      },
+      "runtimeArgs": ["--sourcemap"],
+      "env": { "REMOTE_DEBUGGING_PORT": "9222" },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": { "group": "2_parts", "order": 3 }
+    },
+    {
+      "name": "Desktop: UI (renderer)",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "timeout": 60000,
+      "webRoot": "${workspaceFolder}/apps/desktop/src/renderer",
+      "skipFiles": ["**/node_modules/**"],
+      "presentation": { "group": "2_parts", "order": 4 }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Marketing Hub (all)",
+      "configurations": ["Dev database (PGlite)", "API server", "Desktop: main process", "Desktop: UI (renderer)"],
+      "stopAll": true,
+      "presentation": { "group": "1_start", "order": 1 }
+    },
+    {
+      "name": "Marketing Hub (desktop only)",
+      "configurations": ["Desktop: main process", "Desktop: UI (renderer)"],
+      "stopAll": true,
+      "presentation": { "group": "1_start", "order": 2 }
+    }
+  ]
+}

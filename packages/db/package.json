@@ -1,0 +1,30 @@
+{
+  "name": "@mh/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "migrate:diff": "prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --script",
+    "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "studio": "dotenv -e ../../.env -- prisma studio",
+    "seed": "dotenv -e ../../.env -- tsx src/seed.ts",
+    "dev-db": "tsx scripts/dev-db.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@electric-sql/pglite-pgvector": "0.0.9",
+    "@types/node": "^22.10.2",
+    "dotenv-cli": "^8.0.0",
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.2"
+  }
+}
