@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, Copy, Download, Link2, Plus, RefreshCw, Ticket, Trash2 } from 'lucide-react';
 import { ROLES, type LibraryLocation as LibraryLocationSetting, type NotificationPrefs, type PlatformPreset, type Role } from '@mh/shared';
@@ -9,32 +9,41 @@ import { formatDate, formatWhen } from '../lib/format';
 import { useUsers, type TeamUser } from '../lib/hooks';
 import { Badge, Button, Card, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui';
 import { LibraryLocation } from '../components/LibraryLocation';
+import { WorkLogPage } from './WorkLog';
 
 export function SettingsPage() {
   const { user } = useSession();
+  const { pathname } = useLocation();
   const tabs = [
     { to: 'general', label: 'My settings', show: true },
     { to: 'social', label: 'Social accounts', show: isManager(user) },
     { to: 'users', label: 'Team', show: isAdmin(user) },
+    { to: 'log', label: 'Log', show: true },
     { to: 'system', label: 'System', show: isAdmin(user) },
   ].filter((t) => t.show);
+  const wide = pathname.startsWith('/settings/log');
   return (
-    <div className="max-w-4xl">
-      <PageHeader title="Settings" />
-      <div className="mb-6 flex gap-1 border-b border-slate-800">
-        {tabs.map((t) => (
-          <NavLink key={t.to} to={`/settings/${t.to}`} className={({ isActive }) => `-mb-px border-b-2 px-3 py-2 text-sm ${isActive ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
-            {t.label}
-          </NavLink>
-        ))}
+    <div>
+      <div className="max-w-4xl">
+        <PageHeader title="Settings" />
+        <div className="mb-6 flex gap-1 border-b border-white/10">
+          {tabs.map((t) => (
+            <NavLink key={t.to} to={`/settings/${t.to}`} className={({ isActive }) => `-mb-px border-b-2 px-3 py-2 text-xs uppercase tracking-wider ${isActive ? 'border-sage text-sage' : 'border-transparent text-mist/60 hover:text-mist'}`}>
+              {t.label}
+            </NavLink>
+          ))}
+        </div>
       </div>
-      <Routes>
-        <Route index element={<Navigate to="general" replace />} />
-        <Route path="general" element={<General />} />
-        <Route path="social" element={<Social />} />
-        <Route path="users" element={<Users />} />
-        <Route path="system" element={<System />} />
-      </Routes>
+      <div className={wide ? '' : 'max-w-4xl'}>
+        <Routes>
+          <Route index element={<Navigate to="general" replace />} />
+          <Route path="general" element={<General />} />
+          <Route path="social" element={<Social />} />
+          <Route path="users" element={<Users />} />
+          <Route path="log" element={<WorkLogPage embedded />} />
+          <Route path="system" element={<System />} />
+        </Routes>
+      </div>
     </div>
   );
 }
@@ -75,7 +84,7 @@ function General() {
         </div>
       </Card>
       <Card title="About">
-        <div className="text-sm text-slate-400">Marketing Hub {version.data ?? ''} · connected to <span className="font-mono">{serverUrl}</span> as {user!.name} ({user!.role.toLowerCase()})</div>
+        <div className="text-sm text-slate-400">Mantis {version.data ?? ''} · connected to <span className="font-mono">{serverUrl}</span> as {user!.name} ({user!.role.toLowerCase()})</div>
       </Card>
     </div>
   );
@@ -238,7 +247,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} title="Invite someone">
       {create.data ? (
         <div className="space-y-4 text-sm">
-          <p>Send this code to the new team member. In Marketing Hub they click <b>Create New User</b> and enter it.</p>
+          <p>Send this code to the new team member. In Mantis they click <b>Create New User</b> and enter it.</p>
           <div className="flex items-center gap-3"><CopyCode code={create.data.code} /><Badge>{create.data.role.toLowerCase()}</Badge></div>
           <p className="text-xs text-slate-500">It works once and expires {formatDate(create.data.expiresAt)}.</p>
           <div className="flex justify-end"><Button onClick={onClose}>Done</Button></div>
@@ -362,7 +371,7 @@ function System() {
       </Card>
       <Card title="Maintenance">
         <div className="flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={() => void download('/admin/backup', 'marketing-hub-export.json').then(() => setMsg('Export downloaded.')).catch((e) => setError(errorMessage(e)))}>
+          <Button variant="secondary" onClick={() => void download('/admin/backup', 'mantis-export.json').then(() => setMsg('Export downloaded.')).catch((e) => setError(errorMessage(e)))}>
             <Download className="h-4 w-4" /> Download data export
           </Button>
           <Button variant="secondary" onClick={() => reindex.mutate()} loading={reindex.isPending}><RefreshCw className="h-4 w-4" /> Re-index knowledge base</Button>

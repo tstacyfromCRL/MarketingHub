@@ -1,9 +1,9 @@
 {
   "name": "@mh/desktop",
-  "productName": "Marketing Hub",
+  "productName": "Mantis",
   "version": "0.1.0",
   "private": true,
-  "description": "Marketing Hub desktop app",
+  "description": "Mantis desktop app",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -42,10 +42,10 @@
   },
   "build": {
     "appId": "com.marketinghub.desktop",
-    "productName": "Marketing Hub",
+    "productName": "Mantis",
     "directories": { "output": "release" },
     "files": ["out/**/*"],
-    "protocols": [{ "name": "Marketing Hub", "schemes": ["marketinghub"] }],
+    "protocols": [{ "name": "Mantis", "schemes": ["marketinghub"] }],
     "win": { "target": ["nsis"] },
     "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true },
     "publish": [{ "provider": "generic", "url": "https://updates.example.com/marketing-hub/" }]

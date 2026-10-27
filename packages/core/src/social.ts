@@ -189,7 +189,7 @@ async function discoverAccounts(platform: Platform, token: TokenSet): Promise<Di
 export async function completeOAuth(platform: Platform, code: string, state: string): Promise<{ accounts: string[]; userId: string }> {
   const saved = await prisma.oAuthState.findUnique({ where: { state } });
   if (!saved || saved.platform !== platform || Date.now() - saved.createdAt.getTime() > 15 * 60_000) {
-    throw new Error('This connection link expired. Start again from Marketing Hub.');
+    throw new Error('This connection link expired. Start again from Mantis.');
   }
   await prisma.oAuthState.delete({ where: { state } });
   const token = await exchangeCode(platform, code, saved.verifier);

@@ -134,15 +134,15 @@ export function TasksPage() {
 function Column({ stage, tasks, onAdd, onOpen }: { stage: Stage; tasks: Task[]; onAdd: () => void; onOpen: (id: string) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-lg bg-slate-900/60">
+    <div className="flex min-w-[11rem] flex-1 flex-col rounded-sm bg-sand text-inktext">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-        <span className="flex-1 text-sm font-semibold">{stage.name}</span>
-        <span className="text-xs text-slate-500">{tasks.length}</span>
-        <button onClick={onAdd} className="text-slate-500 hover:text-slate-200"><Plus className="h-4 w-4" /></button>
+        <span className="flex-1 text-sm">{stage.name}</span>
+        <span className="text-xs text-inktext/50">{tasks.length}</span>
+        <button onClick={onAdd} className="text-inktext/50 hover:text-inktext"><Plus className="h-4 w-4" /></button>
       </div>
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div ref={setNodeRef} className={`min-h-[80px] flex-1 space-y-2 overflow-y-auto px-2 pb-2 ${isOver ? 'bg-slate-800/40' : ''}`}>
+        <div ref={setNodeRef} className={`min-h-[80px] flex-1 space-y-2 overflow-y-auto px-2 pb-2 ${isOver ? 'bg-inktext/5' : ''}`}>
           {tasks.map((t) => <SortableTask key={t.id} task={t} onOpen={() => onOpen(t.id)} />)}
         </div>
       </SortableContext>
@@ -162,16 +162,16 @@ function SortableTask({ task, onOpen }: { task: Task; onOpen: () => void }) {
 function TaskCard({ task }: { task: Task }) {
   const overdue = task.dueDate && new Date(task.dueDate) < new Date();
   return (
-    <div className="cursor-grab rounded-md border border-slate-800 bg-slate-950 p-3 shadow-sm hover:border-slate-700">
+    <div className="cursor-grab rounded-sm bg-mist p-3 text-inktext">
       {task.categories.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1">{task.categories.map((c) => <Badge key={c.id} color={c.color}>{c.name}</Badge>)}</div>
       )}
       <div className="text-sm">{task.title}</div>
-      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-        {task.dueDate && <span className={`inline-flex items-center gap-1 ${overdue ? 'text-rose-400' : ''}`}><Calendar className="h-3 w-3" />{formatDate(task.dueDate)}</span>}
+      <div className="mt-2 flex items-center gap-2 text-xs text-inktext/60">
+        {task.dueDate && <span className={`inline-flex items-center gap-1 ${overdue ? 'text-[#6E4E4A]' : ''}`}><Calendar className="h-3 w-3" />{formatDate(task.dueDate)}</span>}
         <span className="flex-1" />
         {task.assignee && (
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-700 text-[10px] font-semibold text-white" title={task.assignee.name}>
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sage text-[10px] text-mist" title={task.assignee.name}>
             {task.assignee.name.split(' ').map((p) => p[0]).join('').slice(0, 2)}
           </span>
         )}

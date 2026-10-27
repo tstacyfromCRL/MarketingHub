@@ -59,7 +59,7 @@ export interface CrawledPage {
 /** Same-site links on the homepage that look like About / Products / Services pages. */
 async function interestingLinks(homepage: string): Promise<string[]> {
   const res = await fetch(homepage, {
-    headers: { 'User-Agent': 'MarketingHubBot/1.0 (+knowledge-base)', Accept: 'text/html' },
+    headers: { 'User-Agent': 'MantisBot/1.0 (+knowledge-base)', Accept: 'text/html' },
     redirect: 'follow',
     signal: AbortSignal.timeout(20_000),
   });
@@ -160,7 +160,7 @@ export async function summarizeCompany(input: { companyName: string; description
           input.description ||
             input.websiteText.replace(/^## .*$/gm, '').trim() ||
             input.currentSummary ||
-            `${input.companyName} is getting set up in Marketing Hub.`,
+            `${input.companyName} is getting set up in Mantis.`,
         ),
         tagline: '',
         mission: '',

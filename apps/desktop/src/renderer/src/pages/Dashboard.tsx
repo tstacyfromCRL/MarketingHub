@@ -102,7 +102,7 @@ export function DashboardPage() {
           )}
         </Card>
 
-        <Card title="Work log" className="xl:col-span-2" actions={<Link to="/activity" className="text-xs text-indigo-300 hover:underline">View all</Link>}>
+        <Card title="Work log" className="xl:col-span-2" actions={<Link to="/settings/log" className="text-xs text-accent hover:underline">View all</Link>}>
           {data.activity.length === 0 ? <Empty>No activity yet.</Empty> : <div className="space-y-2">{data.activity.map((e) => <WorkLogLine key={e.id} event={e} />)}</div>}
         </Card>
 

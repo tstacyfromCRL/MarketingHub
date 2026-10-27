@@ -7,28 +7,39 @@
   body,
   #root {
     height: 100%;
+    background: #3b3f4b;
+    color: #e1e1e1;
   }
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
   ::-webkit-scrollbar-thumb {
-    background: #334155;
+    background: #32363f;
     border-radius: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+  h1,
+  h2,
+  h3 {
+    color: #6a8b5e;
+    font-weight: 400;
+  }
+  a {
+    color: #7b92c6;
+  }
 }
 
 @layer components {
   .input {
-    @apply w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50;
+    @apply w-full rounded-sm border border-transparent bg-mist px-3 py-2 text-sm text-inktext placeholder-inktext/50 outline-none focus:ring-1 focus:ring-sage disabled:opacity-50;
   }
   .label {
-    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400;
+    @apply mb-1 block text-xs font-medium tracking-wide text-mist/80;
   }
   .card {
-    @apply rounded-xl border border-slate-800 bg-slate-900/70;
+    @apply rounded-md border border-chrome bg-chrome/80;
   }
 }

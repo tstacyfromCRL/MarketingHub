@@ -149,7 +149,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await recordEvent({ actorId: req.user.id, verb: 'backup', entityType: 'system', entityId: 'backup', summary: `Data export downloaded by ${req.user.name}` });
     const stamp = new Date().toISOString().slice(0, 10);
     reply.header('Content-Type', 'application/json');
-    reply.header('Content-Disposition', `attachment; filename="marketing-hub-export-${stamp}.json"`);
+    reply.header('Content-Disposition', `attachment; filename="mantis-export-${stamp}.json"`);
     return reply.send(
       JSON.stringify({
         exportedAt: new Date().toISOString(),

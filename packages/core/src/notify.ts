@@ -31,7 +31,7 @@ export async function notify(userIds: (string | null | undefined)[], input: Noti
       await enqueue('send-email', {
         to: user.email,
         subject: input.title,
-        text: `${input.body ?? ''}\n\nOpen Marketing Hub to view${input.link ? `: marketinghub://${input.link.replace(/^\//, '')}` : '.'}`,
+        text: `${input.body ?? ''}\n\nOpen Mantis to view${input.link ? `: marketinghub://${input.link.replace(/^\//, '')}` : '.'}`,
       });
     }
     if (prefs.slack && user.slackUserId && config.SLACK_BOT_TOKEN) {

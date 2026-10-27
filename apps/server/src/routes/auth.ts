@@ -31,7 +31,7 @@ export async function authRoutes(app: FastifyInstance) {
     const user = await prisma.user.create({
       data: { email: body.email.toLowerCase(), name: body.name, passwordHash: await bcrypt.hash(body.password, 11), role: 'ADMIN' },
     });
-    await recordEvent({ actorId: user.id, verb: 'bootstrap', entityType: 'user', entityId: user.id, summary: `Marketing Hub set up by ${user.name}` });
+    await recordEvent({ actorId: user.id, verb: 'bootstrap', entityType: 'user', entityId: user.id, summary: `Mantis set up by ${user.name}` });
     return { token: app.jwt.sign({ sub: user.id }, { expiresIn: '12h' }), user: publicUser(user) };
   });
 

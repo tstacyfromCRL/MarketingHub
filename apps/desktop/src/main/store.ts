@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-/** Per-user, per-machine settings in %APPDATA%\Marketing Hub\settings.json. */
+/** Per-user, per-machine settings in %APPDATA%\Mantis\settings.json. */
 interface Settings {
   serverUrl: string;
   machineId: string;

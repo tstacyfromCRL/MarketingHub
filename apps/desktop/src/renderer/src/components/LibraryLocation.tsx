@@ -202,13 +202,13 @@ export function LibraryFirstRunPrompt() {
   if (status.state === 'unset' && !isAdmin(user)) return null;
   const unset = status.state === 'unset';
   return (
-    <div className="mb-6 rounded-lg border border-indigo-800/60 bg-indigo-950/40 p-4">
+    <div className="mb-6 rounded-sm bg-chrome p-4">
       <div className="mb-3 flex items-start justify-between gap-4">
         <div>
           <div className="font-medium">{unset ? 'Set up the team asset library' : `${status.name} not found`}</div>
           <p className="mt-0.5 text-sm text-slate-400">
             {unset
-              ? 'Choose the top-level folder of the Marketing & Media network drive. Everyone on the team will use that drive; files stay on it and Marketing Hub only indexes thumbnails and details.'
+              ? 'Choose the top-level folder of the Marketing & Media network drive. Everyone on the team will use that drive; files stay on it and Mantis only indexes thumbnails and details.'
               : 'If you just connected the drive or VPN, click Re-check.'}
           </p>
         </div>

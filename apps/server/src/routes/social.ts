@@ -6,7 +6,7 @@ import { completeOAuth, config, oauthClient, recordEvent, startOAuth } from '@mh
 import { authenticate, badRequest, requireRole } from '../http';
 
 const page = (title: string, message: string) =>
-  `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#e2e8f0;display:grid;place-items:center;height:100vh;margin:0}div{max-width:480px;text-align:center}h1{font-size:22px}</style></head><body><div><h1>${title}</h1><p>${message}</p><p>You can close this window and return to Marketing Hub.</p></div></body></html>`;
+  `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#e2e8f0;display:grid;place-items:center;height:100vh;margin:0}div{max-width:480px;text-align:center}h1{font-size:22px}</style></head><body><div><h1>${title}</h1><p>${message}</p><p>You can close this window and return to Mantis.</p></div></body></html>`;
 
 export async function socialRoutes(app: FastifyInstance) {
   /** OAuth redirect target (opened in the user's browser, so no bearer token). */

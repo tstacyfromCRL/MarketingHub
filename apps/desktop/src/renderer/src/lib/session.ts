@@ -23,8 +23,17 @@ interface SessionState {
   init(): Promise<void>;
 }
 
+const DEFAULT_SERVER = 'http://localhost:4000';
+
+/** The saved address is sometimes the Vite dev page (port 5173) instead of the API. That page cannot answer /auth/status, which leaves every welcome button disabled. */
+export function resolveServerUrl(saved: string, pageOrigin?: string): string {
+  const clean = saved.replace(/\/+$/, '');
+  if (pageOrigin && clean === pageOrigin.replace(/\/+$/, '')) return DEFAULT_SERVER;
+  return clean || DEFAULT_SERVER;
+}
+
 export const useSession = create<SessionState>((set, get) => ({
-  serverUrl: 'http://localhost:4000',
+  serverUrl: DEFAULT_SERVER,
   token: null,
   user: null,
   ready: false,
@@ -46,13 +55,15 @@ export const useSession = create<SessionState>((set, get) => ({
   },
   async init() {
     const s = await window.api.session.get();
-    set({ serverUrl: s.serverUrl, token: s.token });
+    const serverUrl = resolveServerUrl(s.serverUrl, window.location.origin);
+    if (serverUrl !== s.serverUrl.replace(/\/+$/, '')) await window.api.session.set({ serverUrl });
+    set({ serverUrl, token: s.token });
     if (s.token) {
       try {
-        const res = await fetch(`${s.serverUrl}/me`, { headers: { Authorization: `Bearer ${s.token}` } });
+        const res = await fetch(`${serverUrl}/me`, { headers: { Authorization: `Bearer ${s.token}` } });
         if (res.ok) {
           set({ user: await res.json() });
-          const refreshed = await fetch(`${s.serverUrl}/auth/refresh`, { method: 'POST', headers: { Authorization: `Bearer ${s.token}` } });
+          const refreshed = await fetch(`${serverUrl}/auth/refresh`, { method: 'POST', headers: { Authorization: `Bearer ${s.token}` } });
           if (refreshed.ok) {
             const { token } = await refreshed.json();
             set({ token });

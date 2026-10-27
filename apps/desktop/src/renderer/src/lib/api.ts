@@ -25,7 +25,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, `Can't reach the Marketing Hub server at ${serverUrl}`);
+    throw new ApiError(0, `Can't reach the Mantis server at ${serverUrl}`);
   }
   if (res.status === 401 && token) {
     await useSession.getState().signOut();

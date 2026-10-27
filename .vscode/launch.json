@@ -51,13 +51,13 @@
   ],
   "compounds": [
     {
-      "name": "Marketing Hub (all)",
+      "name": "Mantis (all)",
       "configurations": ["Dev database (PGlite)", "API server", "Desktop: main process", "Desktop: UI (renderer)"],
       "stopAll": true,
       "presentation": { "group": "1_start", "order": 1 }
     },
     {
-      "name": "Marketing Hub (desktop only)",
+      "name": "Mantis (desktop only)",
       "configurations": ["Desktop: main process", "Desktop: UI (renderer)"],
       "stopAll": true,
       "presentation": { "group": "1_start", "order": 2 }

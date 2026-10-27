@@ -20,7 +20,7 @@ export async function extractReadable(url: string): Promise<{ title: string; tex
     throw new Error('LinkedIn does not allow scraping. Paste the post text into the source instead.');
   }
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'MarketingHubBot/1.0 (+knowledge-base)', Accept: 'text/html,application/xhtml+xml' },
+    headers: { 'User-Agent': 'MantisBot/1.0 (+knowledge-base)', Accept: 'text/html,application/xhtml+xml' },
     redirect: 'follow',
     signal: AbortSignal.timeout(20_000),
   });

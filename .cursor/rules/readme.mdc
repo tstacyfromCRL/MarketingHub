@@ -1,0 +1,10 @@
+---
+description: Keep README.md accurate when Mantis behavior, setup, or usage changes
+alwaysApply: true
+---
+
+# README is the control document
+
+`README.md` is the source of truth for what Mantis is, what someone needs to run it, how to start it, and how to use it.
+
+When a change alters setup, dependencies, launch steps, roles, screens, the library, publishing, or AI configuration, update `README.md` in the same change. Match the product name Mantis. Do not document behavior that the code does not implement.

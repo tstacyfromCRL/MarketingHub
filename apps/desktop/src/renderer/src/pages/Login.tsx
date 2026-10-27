@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, ChevronDown, ChevronRight, LogIn, UserPlus } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useSession, type User } from '../lib/session';
 import { Button, ErrorText, Field } from '../components/ui';
@@ -66,8 +66,8 @@ export function LoginPage() {
   };
 
   const serverSettings = (
-    <div className="border-t border-slate-800 pt-3">
-      <button type="button" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300" onClick={() => setShowServer((s) => !s)}>
+    <div className="pt-2">
+      <button type="button" className="flex items-center gap-1 text-xs text-mist/50 hover:text-mist" onClick={() => setShowServer((s) => !s)}>
         {showServer ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />} Connection settings
       </button>
       {showServer && (
@@ -78,30 +78,47 @@ export function LoginPage() {
     </div>
   );
 
+  if (mode === 'welcome' && needsBootstrap === true) {
+    return (
+      <Shell>
+        <Wordmark />
+        <p className="text-center text-sm text-mist/70">Set up Mantis for your team and teach it your brand.</p>
+        <Button className="w-full" onClick={() => go('company')}>Create company</Button>
+        <ErrorText error={error} />
+        {serverSettings}
+      </Shell>
+    );
+  }
+
   if (mode === 'welcome') {
     return (
       <Shell>
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold">Marketing Hub</h1>
-          <p className="mt-1 text-sm text-slate-400">Plan, create and publish in your company's voice.</p>
-        </div>
-        <div className="space-y-3">
-          <Choice
-            icon={<Building2 className="h-5 w-5" />}
-            title="Create New Company"
-            text={needsBootstrap === false ? 'This server already has a company. Ask your admin for an invite.' : 'Set up Marketing Hub for your team and teach it your brand.'}
-            disabled={!needsBootstrap}
-            onClick={() => go('company')}
-          />
-          <Choice
-            icon={<UserPlus className="h-5 w-5" />}
-            title="Create New User"
-            text="Join your team with the invite code your admin gave you."
-            disabled={needsBootstrap !== false}
-            onClick={() => go('join')}
-          />
-          <Choice icon={<LogIn className="h-5 w-5" />} title="Login" text="Sign in to your team workspace." disabled={needsBootstrap !== false} onClick={() => go('login')} />
-        </div>
+        <Wordmark />
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                const res = await api.post<{ token: string; user: User }>('/auth/login', { email, password });
+                await signIn(res.token, res.user);
+              } catch (err) {
+                setError(errorMessage(err));
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+        >
+          <input className="input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus disabled={needsBootstrap !== false} />
+          <input className="input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required disabled={needsBootstrap !== false} />
+          <div className="space-y-2 pt-2">
+            <Button type="submit" className="w-full" loading={busy} disabled={needsBootstrap !== false}>Login</Button>
+            <Button type="button" className="w-full" disabled={needsBootstrap !== false} onClick={() => go('join')}>Create Account</Button>
+          </div>
+        </form>
         <ErrorText error={error} />
         {serverSettings}
       </Shell>
@@ -113,18 +130,18 @@ export function LoginPage() {
     join: ['Create New User', 'Enter the invite code from your admin and choose your password.', 'Create my account'],
     login: ['Login', 'Sign in to your team workspace.', 'Sign in'],
   };
-  const [title, subtitle, action] = titles[mode];
+  const [, subtitle, action] = titles[mode];
   const creating = mode !== 'login';
 
   return (
     <Shell>
       <form onSubmit={submit} className="space-y-4">
-        <button type="button" className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200" onClick={() => go('welcome')}>
+        <button type="button" className="flex items-center gap-1 text-xs text-accent hover:underline" onClick={() => go('welcome')}>
           <ArrowLeft className="h-3.5 w-3.5" /> Back
         </button>
-        <div>
-          <h1 className="text-xl font-semibold">{title}</h1>
-          <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
+        <div className="text-center">
+          <Wordmark />
+          <p className="mt-2 text-sm text-mist/70">{subtitle}</p>
         </div>
         {mode === 'join' && (
           <Field label="Invite code">
@@ -152,27 +169,14 @@ export function LoginPage() {
   );
 }
 
-function Shell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-full items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
-      <div className="card w-full max-w-md space-y-5 p-8 shadow-2xl">{children}</div>
-    </div>
-  );
+function Wordmark() {
+  return <h1 className="text-center text-3xl font-light tracking-wide text-sage">Mantis</h1>;
 }
 
-function Choice({ icon, title, text, disabled, onClick }: { icon: ReactNode; title: string; text: string; disabled?: boolean; onClick: () => void }) {
+function Shell({ children }: { children: ReactNode }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="flex w-full items-start gap-3 rounded-lg border border-slate-700 bg-slate-900/60 p-4 text-left transition hover:border-indigo-500 hover:bg-indigo-950/40 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-700 disabled:hover:bg-slate-900/60"
-    >
-      <span className="mt-0.5 text-indigo-300">{icon}</span>
-      <span>
-        <span className="block font-medium">{title}</span>
-        <span className="block text-sm text-slate-400">{text}</span>
-      </span>
-    </button>
+    <div className="flex h-full items-center justify-center bg-ink px-6">
+      <div className="w-full max-w-sm space-y-5">{children}</div>
+    </div>
   );
 }

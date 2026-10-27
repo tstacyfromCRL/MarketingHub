@@ -4,10 +4,10 @@ import { Loader2, X } from 'lucide-react';
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-indigo-600 hover:bg-indigo-500 text-white',
-  secondary: 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700',
-  danger: 'bg-rose-600 hover:bg-rose-500 text-white',
-  ghost: 'hover:bg-slate-800 text-slate-300',
+  primary: 'bg-sage text-mist hover:bg-sage/90',
+  secondary: 'border border-sage/40 bg-transparent text-sage hover:bg-sage/10',
+  danger: 'bg-[#6E4E4A] text-mist hover:bg-[#7D5B56]',
+  ghost: 'text-mist/80 hover:bg-chrome hover:text-mist',
 };
 
 export function Button({
@@ -46,8 +46,8 @@ export function Card({ title, actions, children, className = '' }: { title?: Rea
   return (
     <section className={`card ${className}`}>
       {(title || actions) && (
-        <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-200">{title}</h2>
+        <header className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+          <h2 className="text-sm text-sage">{title}</h2>
           <div className="flex items-center gap-2">{actions}</div>
         </header>
       )}
@@ -67,9 +67,9 @@ export function Modal({ open, onClose, title, children, width = 'max-w-lg' }: { 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6" onMouseDown={onClose}>
       <div className={`card w-full ${width} max-h-[90vh] overflow-auto shadow-2xl`} onMouseDown={(e) => e.stopPropagation()}>
-        <header className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-          <h2 className="font-semibold">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-800">
+        <header className="flex items-center justify-between border-b border-white/5 px-5 py-3">
+          <h2 className="text-sage">{title}</h2>
+          <button onClick={onClose} className="rounded p-1 text-sage hover:bg-ink">
             <X className="h-4 w-4" />
           </button>
         </header>
@@ -101,29 +101,29 @@ export const STATUS_COLORS: Record<string, string> = {
 
 export function Spinner({ label }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 p-6 text-sm text-slate-400">
+    <div className="flex items-center gap-2 p-6 text-sm text-mist/70">
       <Loader2 className="h-4 w-4 animate-spin" /> {label ?? 'Loading...'}
     </div>
   );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-sm text-slate-500">{children}</div>;
+  return <div className="rounded-md border border-dashed border-white/10 p-6 text-center text-sm text-mist/60">{children}</div>;
 }
 
 export function ErrorText({ error }: { error: unknown }) {
   if (!error) return null;
-  return <p className="rounded-md bg-rose-950/60 px-3 py-2 text-sm text-rose-300">{error instanceof Error ? error.message : String(error)}</p>;
+  return <p className="rounded-sm bg-[#6E4E4A]/30 px-3 py-2 text-sm text-mist">{error instanceof Error ? error.message : String(error)}</p>;
 }
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div className="mb-4 flex gap-1 border-b border-slate-800">
+    <div className="mb-4 flex gap-1 border-b border-white/10">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`-mb-px border-b-2 px-3 py-2 text-sm ${value === t.id ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+          className={`-mb-px border-b-2 px-3 py-2 text-xs uppercase tracking-wider ${value === t.id ? 'border-sage text-sage' : 'border-transparent text-mist/60 hover:text-mist'}`}
         >
           {t.label}
         </button>
@@ -136,8 +136,8 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   return (
     <div className="mb-6 flex items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-slate-400">{subtitle}</p>}
+        <h1 className="text-2xl font-light tracking-wide text-sage">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-mist/75">{subtitle}</p>}
       </div>
       <div className="flex items-center gap-2">{actions}</div>
     </div>
@@ -146,9 +146,9 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 
 export function ChipInput({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
   return (
-    <div className="flex flex-wrap gap-1.5 rounded-md border border-slate-700 bg-slate-900 p-1.5">
+    <div className="flex flex-wrap gap-1.5 rounded-sm border border-transparent bg-mist p-1.5 text-inktext">
       {value.map((v, i) => (
-        <span key={`${v}-${i}`} className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 text-xs">
+        <span key={`${v}-${i}`} className="inline-flex items-center gap-1 rounded-sm bg-chrome px-2 py-0.5 text-xs text-mist">
           {v}
           <button onClick={() => onChange(value.filter((_, j) => j !== i))} className="text-slate-500 hover:text-slate-200">
             <X className="h-3 w-3" />

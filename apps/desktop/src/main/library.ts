@@ -74,7 +74,7 @@ export async function checkAccess(): Promise<LibraryStatus> {
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return lastStatus;
     const name = lastStatus.name;
-    lastStatus = { state: 'unavailable', name, rootPath: null, uncPath: null, reason: `Can't reach the Marketing Hub server: ${(err as Error).message}` };
+    lastStatus = { state: 'unavailable', name, rootPath: null, uncPath: null, reason: `Can't reach the Mantis server: ${(err as Error).message}` };
     return lastStatus;
   }
   if (!team.location) {

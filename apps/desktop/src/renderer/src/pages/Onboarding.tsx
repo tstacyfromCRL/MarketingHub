@@ -107,7 +107,7 @@ export function OnboardingPage() {
   return (
     <Centered>
       <div className="mb-8 flex items-center gap-3">
-        <div className="text-lg font-semibold">Marketing Hub setup</div>
+        <div className="text-lg font-semibold">Mantis setup</div>
         <div className="flex flex-1 gap-1">
           {WIZARD_STEPS.slice(0, -1).map((s, i) => (
             <div key={s} className={`h-1.5 flex-1 rounded-full ${i < index ? 'bg-indigo-500' : i === index ? 'bg-indigo-400/60' : 'bg-slate-800'}`} />

@@ -14,7 +14,6 @@ import { CampaignsPage, CampaignDetailPage, NewCampaignPage } from './pages/Camp
 import { ApprovalsPage } from './pages/Approvals';
 import { LibraryPage } from './pages/Library';
 import { KnowledgePage } from './pages/Knowledge';
-import { WorkLogPage } from './pages/WorkLog';
 import { AnalyticsPage } from './pages/Analytics';
 import { SettingsPage } from './pages/Settings';
 import { SearchPage } from './pages/Search';
@@ -38,7 +37,7 @@ export function App() {
     return window.api.app.onNavigate((route) => navigate(route));
   }, [user, navigate]);
 
-  if (!ready) return <Spinner label="Starting Marketing Hub..." />;
+  if (!ready) return <Spinner label="Starting Mantis..." />;
   if (!user) return <LoginPage />;
 
   return (
@@ -62,7 +61,7 @@ export function App() {
         <Route path="knowledge/*" element={<KnowledgePage />} />
         <Route path="brand-kit" element={<BrandKitPage />} />
         <Route path="products/*" element={<ProductsPage />} />
-        <Route path="activity" element={<WorkLogPage />} />
+        <Route path="activity" element={<Navigate to="/settings/log" replace />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
         <Route path="search" element={<SearchPage />} />

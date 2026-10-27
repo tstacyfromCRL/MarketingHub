@@ -43,7 +43,7 @@ const schema = z.object({
   LOCAL_STORAGE_DIR: z.string().default('.data/storage'),
 
   SMTP_URL: optional,
-  EMAIL_FROM: z.string().default('Marketing Hub <noreply@example.com>'),
+  EMAIL_FROM: z.string().default('Mantis <noreply@example.com>'),
   SLACK_BOT_TOKEN: optional,
 
   AI_TEXT_PROVIDER: provider,

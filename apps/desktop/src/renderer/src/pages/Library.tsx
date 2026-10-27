@@ -270,7 +270,7 @@ function BatchBar({ ids, items, products, onDone }: { ids: string[]; items: Asse
           <Button type="submit" size="sm" loading={busy} disabled={!folder.trim()}>Create and move</Button>
         </form>
       )}
-      <p className="mt-2 text-[11px] text-slate-500">Moving creates the folder on the shared drive and puts the selected files in it. Removing only takes them out of Marketing Hub.</p>
+      <p className="mt-2 text-[11px] text-slate-500">Moving creates the folder on the shared drive and puts the selected files in it. Removing only takes them out of Mantis.</p>
       <ErrorText error={error} />
     </div>
   );

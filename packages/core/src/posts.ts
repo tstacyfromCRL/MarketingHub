@@ -38,7 +38,7 @@ export async function applyPostAction(postId: string, action: PostAction, actor:
   });
   if (!result.ok) throw new WorkflowError(result.reason);
 
-  const who = isSystem ? 'Marketing Hub' : actor.name;
+  const who = isSystem ? 'Mantis' : actor.name;
   const link = `/posts/${post.id}`;
   const data: Record<string, unknown> = { status: result.to };
   let summary = '';

@@ -36,7 +36,8 @@ export function WorkLogLine({ event }: { event: ActivityEvent }) {
 
 const TYPES = ['post', 'campaign', 'task', 'design', 'content', 'source', 'product', 'user', 'library', 'social', 'stage', 'category', 'schedule'];
 
-export function WorkLogPage() {
+/** `embedded` hides the page title when the log is a Settings tab, so Settings stays the only heading. */
+export function WorkLogPage({ embedded = false }: { embedded?: boolean }) {
   const users = useUsers();
   const [q, setQ] = useState('');
   const [entityType, setEntityType] = useState('');
@@ -62,7 +63,11 @@ export function WorkLogPage() {
 
   return (
     <div>
-      <PageHeader title="Work log" subtitle="Every significant action across the team, newest first." />
+      {embedded ? (
+        <p className="mb-4 text-sm text-mist/70">Every significant action across the team, newest first.</p>
+      ) : (
+        <PageHeader title="Work log" subtitle="Every significant action across the team, newest first." />
+      )}
       <div className="mb-4 flex flex-wrap gap-2">
         <input className="input max-w-xs" placeholder="Search the log..." value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="input w-40" value={entityType} onChange={(e) => setEntityType(e.target.value)}>

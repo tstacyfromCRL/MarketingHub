@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import { api } from './api';
@@ -9,6 +10,15 @@ import { store } from './store';
 
 let win: BrowserWindow | null = null;
 let pendingDeepLink: string | null = null;
+
+app.setName('Mantis');
+// Settings used to live under the old name. Copy them once so a rename does not sign the user out.
+const legacySettings = path.join(app.getPath('appData'), 'Marketing Hub', 'settings.json');
+const mantisSettings = path.join(app.getPath('userData'), 'settings.json');
+if (fsSync.existsSync(legacySettings) && !fsSync.existsSync(mantisSettings)) {
+  fsSync.mkdirSync(path.dirname(mantisSettings), { recursive: true });
+  fsSync.copyFileSync(legacySettings, mantisSettings);
+}
 
 const PROTOCOL = 'marketinghub';
 
@@ -52,7 +62,7 @@ function createWindow() {
     height: 900,
     minWidth: 1100,
     minHeight: 700,
-    title: 'Marketing Hub',
+    title: 'Mantis',
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
     webPreferences: {
