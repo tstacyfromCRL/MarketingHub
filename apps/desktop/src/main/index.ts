@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import { api } from './api';
-import { checkAccess, getLocation, resolveAsset, selectLocation } from './library';
+import { checkAccess, getLocation, importPaths, relocateFiles, resolveAsset, selectLocation } from './library';
 import { scanLibrary, scanProgress, setProgressSink, startScheduledScans } from './indexer';
 import { store } from './store';
 
@@ -97,6 +97,8 @@ function registerIpc() {
   ipcMain.handle('library:select', (_e, name?: string) => selectLocation(win, name));
   ipcMain.handle('library:getLocation', () => getLocation());
   ipcMain.handle('library:checkAccess', () => checkAccess());
+  ipcMain.handle('library:import', (_e, kind: 'FOLDER' | 'FILE') => importPaths(win, kind));
+  ipcMain.handle('library:relocate', (_e, folder: string, moves: { id: string; from: string; to: string }[]) => relocateFiles(folder, moves));
 
   // ---- Indexing & files ----
   ipcMain.handle('library:scan', (_e, force?: boolean) => scanLibrary({ force }));

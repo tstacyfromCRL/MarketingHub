@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { constants as FS } from 'node:fs';
 import path from 'node:path';
 import {
-  DEFAULT_LIBRARY_NAME, libraryNotFoundMessage, resolveLibraryPath, toUncPath, type DriveMapping, type LibraryLocation, type LibraryStatus,
+  DEFAULT_LIBRARY_NAME, libraryNotFoundMessage, resolveLibraryPath, toRelPath, toUncPath, type DriveMapping, type LibraryImportKind, type LibraryLocation, type LibraryStatus,
 } from '@mh/shared';
 import { api, ApiError, type Me } from './api';
 import { store } from './store';
@@ -107,6 +107,91 @@ export async function selectLocation(win: BrowserWindow | null, name?: string): 
   const uncPath = toUncPath(rootPath, await driveMappings());
   await api('PUT', '/library', { name: name?.trim() || lastStatus.name || DEFAULT_LIBRARY_NAME, rootPath, uncPath });
   return checkAccess();
+}
+
+export interface ImportResult {
+  cancelled?: boolean;
+  error?: string;
+  /** Set when the selection includes the drive root, which indexes everything. */
+  warning?: string;
+  imported: number;
+}
+
+/** Pick files or folders inside the library drive and add them to the team's index. */
+export async function importPaths(win: BrowserWindow | null, kind: LibraryImportKind): Promise<ImportResult> {
+  const status = currentStatus().state === 'ok' ? currentStatus() : await checkAccess();
+  if (status.state !== 'ok') {
+    return { imported: 0, error: status.state === 'unavailable' ? status.reason : 'The library location has not been set up yet' };
+  }
+  const opts = {
+    title: kind === 'FOLDER' ? 'Import folders' : 'Import files',
+    buttonLabel: 'Import',
+    properties: (kind === 'FOLDER' ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections']) as ('openDirectory' | 'openFile' | 'multiSelections')[],
+    defaultPath: status.path,
+  };
+  const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+  if (result.canceled || result.filePaths.length === 0) return { cancelled: true, imported: 0 };
+
+  const paths: { relPath: string; kind: LibraryImportKind }[] = [];
+  let outside = 0;
+  for (const picked of result.filePaths) {
+    try {
+      paths.push({ relPath: toRelPath(status.path, picked), kind });
+    } catch {
+      outside++;
+    }
+  }
+  if (paths.length === 0) return { imported: 0, error: `Choose something inside the ${status.name}` };
+  const before = await api<{ id: string; relPath: string }[]>('GET', '/library/imports');
+  const saved = await api<{ id: string; relPath: string }[]>('POST', '/library/imports', { paths });
+  const known = new Set(before.map((row) => row.relPath.toLowerCase()));
+  return {
+    imported: saved.filter((row) => !known.has(row.relPath.toLowerCase())).length,
+    warning: paths.some((p) => p.kind === 'FOLDER' && p.relPath === '') ? 'This indexes the whole drive.' : undefined,
+    error: outside ? `Choose something inside the ${status.name}. ${outside} selection${outside === 1 ? '' : 's'} skipped.` : undefined,
+  };
+}
+
+/** Creates the folder if needed and moves files inside the library drive. Then updates the index. */
+export async function relocateFiles(folder: string, moves: { id: string; from: string; to: string }[]): Promise<{ error?: string }> {
+  const status = currentStatus().state === 'ok' ? currentStatus() : await checkAccess();
+  if (status.state !== 'ok') return { error: status.state === 'unavailable' ? status.reason : 'The library location has not been set up yet' };
+  const root = status.path;
+  const planned: { id: string; fromAbs: string; toAbs: string; to: string }[] = [];
+  for (const move of moves) {
+    let fromAbs: string;
+    let toAbs: string;
+    try {
+      fromAbs = path.resolve(root, ...move.from.split('/'));
+      toAbs = path.resolve(root, ...move.to.split('/'));
+      const rootAbs = path.resolve(root).toLowerCase();
+      if (!fromAbs.toLowerCase().startsWith(rootAbs) || !toAbs.toLowerCase().startsWith(rootAbs)) throw new Error('outside');
+    } catch {
+      return { error: 'That folder is outside the library drive' };
+    }
+    planned.push({ id: move.id, fromAbs, toAbs, to: move.to });
+  }
+  for (const item of planned) {
+    try {
+      await fs.access(item.toAbs);
+      return { error: `"${path.basename(item.toAbs)}" is already in that folder` };
+    } catch {
+      // Destination is free.
+    }
+  }
+  const done: { fromAbs: string; toAbs: string }[] = [];
+  try {
+    for (const item of planned) {
+      await fs.mkdir(path.dirname(item.toAbs), { recursive: true });
+      await fs.rename(item.fromAbs, item.toAbs);
+      done.push(item);
+    }
+    await api('POST', '/library/assets/relocate', { folder, moves: planned.map((item) => ({ id: item.id, relPath: item.to })) });
+  } catch (err) {
+    for (const item of done.reverse()) await fs.rename(item.toAbs, item.fromAbs).catch(() => undefined);
+    return { error: (err as Error).message };
+  }
+  return {};
 }
 
 export function getLocation() {

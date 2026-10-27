@@ -304,6 +304,20 @@ interface SystemInfo {
   jobs: string;
   storage: string;
   ai: Record<string, string>;
+  local: {
+    inUse: boolean;
+    baseUrl: string;
+    textModel: string;
+    embedModel: string;
+    visionModel: string | null;
+    reachable: boolean;
+    models: string[];
+    textModelReady: boolean;
+    embedModelReady: boolean;
+    visionModelReady: boolean;
+    error?: string;
+  };
+  embedDims: { expected: number; stored: number[]; mismatch: boolean };
   email: boolean;
   slack: boolean;
   publishMode: string;
@@ -331,6 +345,15 @@ function System() {
         {row('Embeddings', data.ai.embeddings)}
         {row('Vision tagging', data.ai.vision)}
         {row('Image matching', data.ai.imageEmbeddings)}
+        {data.local?.inUse && row('Local model server', data.local.reachable ? <Badge color="#22c55e">{data.local.baseUrl}</Badge> : <Badge color="#f43f5e">{data.local.error ?? 'unreachable'}</Badge>)}
+        {data.local?.inUse && data.ai.text === 'local' && row('Text model', data.local.textModelReady ? data.local.textModel : `${data.local.textModel} is not loaded`)}
+        {data.local?.inUse && data.ai.embeddings === 'local' && row('Embedding model', data.local.embedModelReady ? `${data.local.embedModel} · ${data.embedDims.expected} dimensions` : `${data.local.embedModel} is not loaded`)}
+        {data.local?.inUse && data.ai.vision === 'local' && row('Vision model', data.local.visionModelReady ? (data.local.visionModel ?? 'not set') : `${data.local.visionModel ?? 'LOCAL_VISION_MODEL'} is not loaded`)}
+        {data.embedDims?.mismatch && (
+          <p className="mt-3 text-sm text-amber-200">
+            Knowledge embeddings are stored at {data.embedDims.stored.join(' and ')} dimensions, and the current provider uses {data.embedDims.expected}. Re-index the knowledge base. Retrieval skips chunks of a different size until that finishes.
+          </p>
+        )}
         {row('Email (SMTP)', ok(data.email, 'configured'))}
         {row('Slack', ok(data.slack, 'configured'))}
         {row('Publishing', data.publishMode === 'ayrshare' ? 'Ayrshare' : 'Direct platform APIs')}
@@ -345,6 +368,7 @@ function System() {
           <Button variant="secondary" onClick={() => reindex.mutate()} loading={reindex.isPending}><RefreshCw className="h-4 w-4" /> Re-index knowledge base</Button>
         </div>
         <p className="mt-3 text-xs text-slate-500">The export contains all records as JSON (no passwords or social tokens). For full disaster recovery, back up the database with pg_dump and the file storage bucket.</p>
+        <p className="mt-2 text-xs text-slate-500">Re-index after changing the embedding provider or model. Existing chunks keep their old size until you do, and search ignores any size that does not match the current model.</p>
         {msg && <p className="mt-2 text-sm text-emerald-400">{msg}</p>}
         <ErrorText error={error} />
       </Card>

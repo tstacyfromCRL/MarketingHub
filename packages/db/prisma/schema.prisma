@@ -89,6 +89,26 @@ model Library {
   createdAt   DateTime    @default(now())
   assets      Asset[]
   lease       ScanLease?
+  imports     LibraryImport[]
+}
+
+enum LibraryImportKind {
+  FOLDER
+  FILE
+}
+
+/// A file or folder inside the library drive that the team has chosen to index. Everything else on the drive is ignored.
+model LibraryImport {
+  id        String            @id @default(cuid())
+  libraryId String
+  library   Library           @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  /// Path relative to the library root, forward slashes. Empty means the drive root itself.
+  relPath   String
+  kind      LibraryImportKind
+  addedById String
+  createdAt DateTime          @default(now())
+
+  @@unique([libraryId, relPath])
 }
 
 /// Only one desktop client may scan the library at a time.
@@ -126,6 +146,8 @@ model Asset {
   tags         String[]
   embedding    Unsupported("vector")?
   missing      Boolean                @default(false)
+  /// Removed from the library on purpose. Scans leave the file on the drive and do not index it again.
+  excluded     Boolean                @default(false)
   needsTagging Boolean                @default(true)
   indexedAt    DateTime               @default(now())
   products     AssetProduct[]

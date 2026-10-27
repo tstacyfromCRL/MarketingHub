@@ -19,6 +19,12 @@ const api = {
     selectLocation: (name?: string): Promise<LibraryStatus & { cancelled?: boolean; error?: string }> => ipcRenderer.invoke('library:select', name),
     getLocation: (): Promise<{ status: LibraryStatus; machine: string }> => ipcRenderer.invoke('library:getLocation'),
     checkAccess: (): Promise<LibraryStatus> => ipcRenderer.invoke('library:checkAccess'),
+    /** Pick files or folders inside the library drive. Nothing outside that drive is accepted. */
+    importPaths: (kind: 'FOLDER' | 'FILE'): Promise<{ cancelled?: boolean; error?: string; warning?: string; imported: number }> =>
+      ipcRenderer.invoke('library:import', kind),
+    /** Moves files into a folder on the shared drive and updates the library index. */
+    relocate: (folder: string, moves: { id: string; from: string; to: string }[]): Promise<{ error?: string }> =>
+      ipcRenderer.invoke('library:relocate', folder, moves),
     scan: (force?: boolean): Promise<ScanProgress> => ipcRenderer.invoke('library:scan', force),
     scanProgress: (): Promise<ScanProgress> => ipcRenderer.invoke('library:scanProgress'),
     open: (relPath: string): Promise<void> => ipcRenderer.invoke('library:open', relPath),

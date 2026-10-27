@@ -81,6 +81,21 @@ if (!existingLib.location) {
   assert.equal(set.location.uncPath, '\\\\files\\marketing-and-media');
 }
 await assert.rejects(call('PUT', '/library', { rootPath: 'C:\\' }, creatorToken), /403/);
+const imported = await call('POST', '/library/imports', {
+  paths: [
+    { relPath: 'Products', kind: 'FOLDER' },
+    { relPath: 'Products/Aurora Lamp/hero.jpg', kind: 'FILE' },
+    { relPath: 'Campaigns/Spring', kind: 'FOLDER' },
+  ],
+});
+assert.equal(imported.length, 2);
+assert.ok(imported.some((i) => i.relPath === 'Products' && i.kind === 'FOLDER'));
+assert.ok(!imported.some((i) => i.relPath.startsWith('Products/')));
+const spring = imported.find((i) => i.relPath === 'Campaigns/Spring');
+await assert.rejects(call('DELETE', `/library/imports/${spring.id}`, undefined, creatorToken), /403/);
+await call('DELETE', `/library/imports/${spring.id}`);
+assert.ok(!(await call('GET', '/library/imports')).some((i) => i.relPath === 'Campaigns/Spring'));
+step('library imports: nested paths collapse, only the adder or a manager can remove one');
 const lease = await call('POST', '/library/lease', { machine: 'SMOKE-PC' }, creatorToken);
 await assert.rejects(call('POST', '/library/lease', { machine: 'OTHER-PC' }, managerToken), /409/);
 await call('POST', '/library/assets/batch', {

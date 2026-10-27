@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@mh/db';
-import { config, recordEvent, usingRedis } from '@mh/core';
+import { config, expectedEmbedDims, localModelHealth, recordEvent, storedEmbedDims, usingRedis } from '@mh/core';
 import { authenticate, requireRole } from '../http';
 
 function weekKey(d: Date) {
@@ -95,21 +95,27 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // ---- System status (admin) ----
-  app.get('/admin/system', { preHandler: requireRole('ADMIN') }, async () => ({
-    jobs: usingRedis ? 'redis' : 'in-process',
-    storage: config.STORAGE_DRIVER,
-    ai: {
-      text: config.AI_TEXT_PROVIDER,
-      image: config.AI_IMAGE_PROVIDER,
-      embeddings: config.AI_EMBED_PROVIDER,
-      vision: config.AI_VISION_PROVIDER,
-      imageEmbeddings: config.IMAGE_EMBED_PROVIDER,
-    },
-    email: Boolean(config.SMTP_URL),
-    slack: Boolean(config.SLACK_BOT_TOKEN),
-    publishMode: config.PUBLISH_MODE,
-    teamTimezone: config.TEAM_TIMEZONE,
-  }));
+  app.get('/admin/system', { preHandler: requireRole('ADMIN') }, async () => {
+    const [local, stored] = await Promise.all([localModelHealth(), storedEmbedDims()]);
+    const expected = expectedEmbedDims();
+    return {
+      jobs: usingRedis ? 'redis' : 'in-process',
+      storage: config.STORAGE_DRIVER,
+      ai: {
+        text: config.AI_TEXT_PROVIDER,
+        image: config.AI_IMAGE_PROVIDER,
+        embeddings: config.AI_EMBED_PROVIDER,
+        vision: config.AI_VISION_PROVIDER,
+        imageEmbeddings: config.IMAGE_EMBED_PROVIDER,
+      },
+      local,
+      embedDims: { expected, stored, mismatch: stored.some((dims) => dims !== expected) },
+      email: Boolean(config.SMTP_URL),
+      slack: Boolean(config.SLACK_BOT_TOKEN),
+      publishMode: config.PUBLISH_MODE,
+      teamTimezone: config.TEAM_TIMEZONE,
+    };
+  });
 
   /**
    * JSON export of all app data (no password hashes or social tokens), for archiving or audits.

@@ -70,6 +70,39 @@ export function assetKindForPath(p: string): AssetKind {
   return EXT_KIND[ext] ?? 'OTHER';
 }
 
+export const LIBRARY_IMPORT_KINDS = ['FOLDER', 'FILE'] as const;
+export type LibraryImportKind = (typeof LIBRARY_IMPORT_KINDS)[number];
+
+/** Forward slashes, no leading or trailing slash. Empty string is the drive root. */
+export function normalizeImportPath(relPath: string): string {
+  return relPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+}
+
+/** True when `relPath` is strictly inside a folder import (`folderRel` of "" is the drive root). */
+export function isInsideImport(folderRel: string, relPath: string): boolean {
+  const folder = normalizeImportPath(folderRel);
+  const rel = normalizeImportPath(relPath);
+  if (folder.toLowerCase() === rel.toLowerCase()) return false;
+  if (folder === '') return true;
+  return rel.toLowerCase().startsWith(`${folder.toLowerCase()}/`);
+}
+
+/**
+ * Drops imports already covered by a folder. A newly added parent folder replaces the narrower
+ * files and folders inside it. A folder wins over a file with the same path.
+ */
+export function collapseLibraryImports<T extends { relPath: string; kind: LibraryImportKind }>(items: T[]): T[] {
+  const byPath = new Map<string, T>();
+  for (const item of items) {
+    const relPath = normalizeImportPath(item.relPath);
+    const key = relPath.toLowerCase();
+    const prev = byPath.get(key);
+    if (!prev || item.kind === 'FOLDER') byPath.set(key, { ...item, relPath });
+  }
+  const list = [...byPath.values()];
+  return list.filter((item) => !list.some((other) => other.kind === 'FOLDER' && isInsideImport(other.relPath, item.relPath)));
+}
+
 /** Normalizes a path relative to the library root to forward slashes, so it is identical on every PC. */
 export function toRelPath(root: string, absolute: string): string {
   const norm = (s: string) => s.replace(/\\/g, '/').replace(/\/+$/, '');

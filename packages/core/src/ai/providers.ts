@@ -17,47 +17,128 @@ export interface VisionResult {
   tags: string[];
 }
 
+export interface TextUsage {
+  promptTokens?: number;
+  outputTokens?: number;
+}
+
+/** What a provider call produced. Phase 1 logs this; callers that only need the string use generateText(). */
+export interface TextResult {
+  text: string;
+  provider: 'mock' | 'openai' | 'anthropic' | 'local';
+  model: string;
+  usage?: TextUsage;
+}
+
+export interface LocalModelHealth {
+  inUse: boolean;
+  baseUrl: string;
+  textModel: string;
+  embedModel: string;
+  visionModel: string | null;
+  reachable: boolean;
+  models: string[];
+  textModelReady: boolean;
+  embedModelReady: boolean;
+  visionModelReady: boolean;
+  error?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
 
 export async function generateText(req: TextRequest): Promise<string> {
+  return (await generateTextDetailed(req)).text;
+}
+
+export async function generateTextDetailed(req: TextRequest): Promise<TextResult> {
   switch (config.AI_TEXT_PROVIDER) {
     case 'mock':
-      return req.mock();
+      return { text: req.mock(), provider: 'mock', model: 'mock' };
     case 'openai':
-      return openAiChat(req.system, [{ type: 'text', text: req.prompt }], req.json, req.maxTokens);
+      return openAiCompatibleChat({
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: requiredKey(config.OPENAI_API_KEY, 'OPENAI_API_KEY'),
+        model: config.OPENAI_TEXT_MODEL,
+        system: req.system,
+        parts: [{ type: 'text', text: req.prompt }],
+        json: req.json,
+        maxTokens: req.maxTokens,
+        tokenField: 'max_completion_tokens',
+        provider: 'openai',
+      });
     case 'anthropic':
       return anthropicMessage(req.system, [{ type: 'text', text: req.prompt }], req.json, req.maxTokens);
+    case 'local':
+      return openAiCompatibleChat({
+        baseUrl: config.LOCAL_LLM_BASE_URL,
+        apiKey: config.LOCAL_LLM_API_KEY,
+        model: config.LOCAL_TEXT_MODEL,
+        system: req.system,
+        parts: [{ type: 'text', text: req.prompt }],
+        json: req.json,
+        maxTokens: req.maxTokens,
+        tokenField: 'max_tokens',
+        timeoutMs: config.LOCAL_LLM_TIMEOUT_MS,
+        provider: 'local',
+        unwrapJson: true,
+      });
   }
 }
 
 type Part = { type: 'text'; text: string } | { type: 'image'; png: Buffer };
 
-async function openAiChat(system: string, parts: Part[], json = false, maxTokens = 2000): Promise<string> {
-  if (!config.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
-  const content = parts.map((p) =>
+interface CompatibleChat {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  system: string;
+  parts: Part[];
+  json?: boolean;
+  maxTokens?: number;
+  /** Ollama and some other compatible servers reject max_completion_tokens. */
+  tokenField: 'max_tokens' | 'max_completion_tokens';
+  timeoutMs?: number;
+  provider: 'openai' | 'local';
+  /** Small local models sometimes wrap a JSON object in prose. */
+  unwrapJson?: boolean;
+}
+
+export async function openAiCompatibleChat(opts: CompatibleChat): Promise<TextResult> {
+  const content = opts.parts.map((p) =>
     p.type === 'text' ? { type: 'text', text: p.text } : { type: 'image_url', image_url: { url: `data:image/png;base64,${p.png.toString('base64')}` } },
   );
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const maxTokens = opts.maxTokens ?? 2000;
+  const res = await fetch(endpoint(opts.baseUrl, 'chat/completions'), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${config.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    headers: jsonHeaders(opts.apiKey),
+    signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
     body: JSON.stringify({
-      model: config.OPENAI_TEXT_MODEL,
-      max_completion_tokens: maxTokens,
-      response_format: json ? { type: 'json_object' } : undefined,
+      model: opts.model,
+      [opts.tokenField]: maxTokens,
+      response_format: opts.json ? { type: 'json_object' } : undefined,
       messages: [
-        { role: 'system', content: system },
+        { role: 'system', content: opts.system },
         { role: 'user', content },
       ],
     }),
   });
-  if (!res.ok) throw new Error(`OpenAI error ${res.status}: ${await res.text()}`);
-  const data = (await res.json()) as { choices: { message: { content: string } }[] };
-  return data.choices[0].message.content;
+  if (!res.ok) throw new Error(`${opts.provider === 'openai' ? 'OpenAI' : 'Local model'} error ${res.status}: ${await res.text()}`);
+  const data = (await res.json()) as {
+    choices: { message: { content: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  const raw = data.choices[0]?.message?.content ?? '';
+  return {
+    text: opts.json && opts.unwrapJson ? extractJson(raw) : raw,
+    provider: opts.provider,
+    model: opts.model,
+    usage: usageFrom(data.usage?.prompt_tokens, data.usage?.completion_tokens),
+  };
 }
 
-async function anthropicMessage(system: string, parts: Part[], json = false, maxTokens = 2000): Promise<string> {
+async function anthropicMessage(system: string, parts: Part[], json = false, maxTokens = 2000): Promise<TextResult> {
   if (!config.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set');
   const content = parts.map((p) =>
     p.type === 'text'
@@ -75,9 +156,78 @@ async function anthropicMessage(system: string, parts: Part[], json = false, max
     }),
   });
   if (!res.ok) throw new Error(`Anthropic error ${res.status}: ${await res.text()}`);
-  const data = (await res.json()) as { content: { type: string; text?: string }[] };
+  const data = (await res.json()) as { content: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
   const text = data.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
-  return json ? extractJson(text) : text;
+  return {
+    text: json ? extractJson(text) : text,
+    provider: 'anthropic',
+    model: config.ANTHROPIC_MODEL,
+    usage: usageFrom(data.usage?.input_tokens, data.usage?.output_tokens),
+  };
+}
+
+function usageFrom(prompt?: number, output?: number): TextUsage | undefined {
+  if (prompt == null && output == null) return undefined;
+  return { promptTokens: prompt, outputTokens: output };
+}
+
+function requiredKey(key: string | undefined, name: string): string {
+  if (!key) throw new Error(`${name} is not set`);
+  return key;
+}
+
+function jsonHeaders(apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  return headers;
+}
+
+function endpoint(baseUrl: string, path: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+}
+
+/** True when an Ollama id and a configured tag name the same model (`name` and `name:latest`). */
+export function sameLocalModel(listed: string, wanted: string): boolean {
+  const canonical = (name: string) => name.toLowerCase().replace(/:latest$/, '');
+  return canonical(listed) === canonical(wanted);
+}
+
+/** GET {LOCAL_LLM_BASE_URL}/models. Skips the network call when no provider is set to local. */
+export async function localModelHealth(): Promise<LocalModelHealth> {
+  const inUse = config.AI_TEXT_PROVIDER === 'local' || config.AI_EMBED_PROVIDER === 'local' || config.AI_VISION_PROVIDER === 'local';
+  const base: LocalModelHealth = {
+    inUse,
+    baseUrl: config.LOCAL_LLM_BASE_URL,
+    textModel: config.LOCAL_TEXT_MODEL,
+    embedModel: config.LOCAL_EMBED_MODEL,
+    visionModel: config.LOCAL_VISION_MODEL ?? null,
+    reachable: false,
+    models: [],
+    textModelReady: false,
+    embedModelReady: false,
+    visionModelReady: false,
+  };
+  if (!inUse) return base;
+  try {
+    const res = await fetch(endpoint(config.LOCAL_LLM_BASE_URL, 'models'), {
+      headers: jsonHeaders(config.LOCAL_LLM_API_KEY),
+      signal: AbortSignal.timeout(Math.min(config.LOCAL_LLM_TIMEOUT_MS, 8_000)),
+    });
+    if (!res.ok) throw new Error(`Local model server returned ${res.status}`);
+    const data = (await res.json()) as { data?: { id?: string }[] };
+    const models = (data.data ?? []).map((row) => row.id).filter((id): id is string => Boolean(id));
+    const listed = (name: string | undefined) => Boolean(name) && models.some((id) => sameLocalModel(id, name!));
+    return {
+      ...base,
+      reachable: true,
+      models,
+      textModelReady: config.AI_TEXT_PROVIDER !== 'local' || listed(config.LOCAL_TEXT_MODEL),
+      embedModelReady: config.AI_EMBED_PROVIDER !== 'local' || listed(config.LOCAL_EMBED_MODEL),
+      visionModelReady: config.AI_VISION_PROVIDER !== 'local' || listed(config.LOCAL_VISION_MODEL),
+    };
+  } catch (err) {
+    return { ...base, error: err instanceof Error ? err.message : 'Local model server is unreachable' };
+  }
 }
 
 /** Pulls the first {...} block out of a model response. */
@@ -136,21 +286,64 @@ async function mockImage(prompt: string, width: number, height: number, palette:
 // ---------------------------------------------------------------------------
 
 const MOCK_DIMS = 256;
+/** text-embedding-3-small's default width when the request does not pass `dimensions`. */
+const OPENAI_EMBED_DIMS = 1536;
+
+export function expectedEmbedDims(): number {
+  switch (config.AI_EMBED_PROVIDER) {
+    case 'mock':
+      return MOCK_DIMS;
+    case 'openai':
+      return OPENAI_EMBED_DIMS;
+    case 'local':
+      return config.LOCAL_EMBED_DIMS;
+  }
+}
 
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
   if (config.AI_EMBED_PROVIDER === 'openai') {
-    if (!config.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
-    const res = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.OPENAI_EMBED_MODEL, input: texts }),
+    return openAiCompatibleEmbeddings({
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: requiredKey(config.OPENAI_API_KEY, 'OPENAI_API_KEY'),
+      model: config.OPENAI_EMBED_MODEL,
+      input: texts,
+      label: 'OpenAI',
     });
-    if (!res.ok) throw new Error(`OpenAI embeddings error ${res.status}: ${await res.text()}`);
-    const data = (await res.json()) as { data: { embedding: number[] }[] };
-    return data.data.map((d) => d.embedding);
+  }
+  if (config.AI_EMBED_PROVIDER === 'local') {
+    const vectors = await openAiCompatibleEmbeddings({
+      baseUrl: config.LOCAL_LLM_BASE_URL,
+      apiKey: config.LOCAL_LLM_API_KEY,
+      model: config.LOCAL_EMBED_MODEL,
+      input: texts,
+      timeoutMs: config.LOCAL_LLM_TIMEOUT_MS,
+      label: 'Local model',
+    });
+    const width = vectors.find((v) => v.length !== config.LOCAL_EMBED_DIMS);
+    if (width) throw new Error(`Local embedding model returned ${width.length} dimensions, but LOCAL_EMBED_DIMS is ${config.LOCAL_EMBED_DIMS}`);
+    return vectors;
   }
   return texts.map(hashEmbed);
+}
+
+async function openAiCompatibleEmbeddings(opts: {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  input: string[];
+  timeoutMs?: number;
+  label: string;
+}): Promise<number[][]> {
+  const res = await fetch(endpoint(opts.baseUrl, 'embeddings'), {
+    method: 'POST',
+    headers: jsonHeaders(opts.apiKey),
+    signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
+    body: JSON.stringify({ model: opts.model, input: opts.input }),
+  });
+  if (!res.ok) throw new Error(`${opts.label} embeddings error ${res.status}: ${await res.text()}`);
+  const data = (await res.json()) as { data: { embedding: number[]; index?: number }[] };
+  return data.data.slice().sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).map((d) => d.embedding);
 }
 
 /** Hashing-trick bag of words; lets retrieval work offline with keyword-level similarity. */
@@ -181,10 +374,44 @@ export async function describeImage(png: Buffer, pathHint: string): Promise<Visi
   if (config.AI_VISION_PROVIDER === 'mock') return mockVision(png, pathHint);
   const system = 'You tag images for a marketing team asset library.';
   const parts: Part[] = [{ type: 'image', png }, { type: 'text', text: VISION_PROMPT(pathHint) }];
-  const text =
-    config.AI_VISION_PROVIDER === 'openai' ? await openAiChat(system, parts, true, 400) : await anthropicMessage(system, parts, true, 400);
-  const parsed = parseJson<Partial<VisionResult>>(text);
+  const parsed = parseJson<Partial<VisionResult>>((await visionText(system, parts)).text);
   return { description: String(parsed.description ?? ''), tags: (parsed.tags ?? []).map(String).slice(0, 12) };
+}
+
+function visionText(system: string, parts: Part[]): Promise<TextResult> {
+  switch (config.AI_VISION_PROVIDER) {
+    case 'mock':
+      throw new Error('Vision provider is mock');
+    case 'openai':
+      return openAiCompatibleChat({
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: requiredKey(config.OPENAI_API_KEY, 'OPENAI_API_KEY'),
+        model: config.OPENAI_TEXT_MODEL,
+        system,
+        parts,
+        json: true,
+        maxTokens: 400,
+        tokenField: 'max_completion_tokens',
+        provider: 'openai',
+      });
+    case 'anthropic':
+      return anthropicMessage(system, parts, true, 400);
+    case 'local':
+      if (!config.LOCAL_VISION_MODEL) throw new Error('LOCAL_VISION_MODEL is not set');
+      return openAiCompatibleChat({
+        baseUrl: config.LOCAL_LLM_BASE_URL,
+        apiKey: config.LOCAL_LLM_API_KEY,
+        model: config.LOCAL_VISION_MODEL,
+        system,
+        parts,
+        json: true,
+        maxTokens: 400,
+        tokenField: 'max_tokens',
+        timeoutMs: config.LOCAL_LLM_TIMEOUT_MS,
+        provider: 'local',
+        unwrapJson: true,
+      });
+  }
 }
 
 async function mockVision(png: Buffer, pathHint: string): Promise<VisionResult> {

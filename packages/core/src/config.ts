@@ -21,7 +21,7 @@ const optional = z
   .string()
   .optional()
   .transform((v) => (v && v.length > 0 ? v : undefined));
-const provider = z.enum(['mock', 'openai', 'anthropic']).default('mock');
+const provider = z.enum(['mock', 'openai', 'anthropic', 'local']).default('mock');
 
 const schema = z.object({
   NODE_ENV: z.string().default('development'),
@@ -48,7 +48,7 @@ const schema = z.object({
 
   AI_TEXT_PROVIDER: provider,
   AI_IMAGE_PROVIDER: z.enum(['mock', 'openai']).default('mock'),
-  AI_EMBED_PROVIDER: z.enum(['mock', 'openai']).default('mock'),
+  AI_EMBED_PROVIDER: z.enum(['mock', 'openai', 'local']).default('mock'),
   AI_VISION_PROVIDER: provider,
   IMAGE_EMBED_PROVIDER: z.enum(['histogram', 'clip']).default('histogram'),
   OPENAI_API_KEY: optional,
@@ -57,6 +57,18 @@ const schema = z.object({
   OPENAI_EMBED_MODEL: z.string().default('text-embedding-3-small'),
   ANTHROPIC_API_KEY: optional,
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5'),
+  /**
+   * OpenAI-compatible server (Ollama's /v1, or vLLM). Qwen2.5 7B Instruct is Apache-2.0 and fits
+   * about 8 GB at 4-bit; use qwen2.5:14b when the GPU has about 12 GB. nomic-embed-text is 768-d.
+   */
+  LOCAL_LLM_BASE_URL: z.string().default('http://127.0.0.1:11434/v1'),
+  LOCAL_LLM_API_KEY: optional,
+  LOCAL_TEXT_MODEL: z.string().default('qwen2.5:7b'),
+  LOCAL_EMBED_MODEL: z.string().default('nomic-embed-text'),
+  LOCAL_EMBED_DIMS: z.coerce.number().int().positive().default(768),
+  LOCAL_LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  /** Set only when AI_VISION_PROVIDER=local. Leave empty to keep vision on mock, OpenAI, or Anthropic. */
+  LOCAL_VISION_MODEL: optional,
 
   PUBLISH_MODE: z.enum(['direct', 'ayrshare']).default('direct'),
   AYRSHARE_API_KEY: optional,

@@ -91,10 +91,7 @@ export function LibraryLocation() {
       if (result.error) return setError(result.error);
       setStatus(result);
       void queryClient.invalidateQueries({ queryKey: ['library-server'] });
-      if (result.state === 'ok') {
-        localStorage.removeItem(PROMPT_DISMISSED);
-        void window.api.library.scan();
-      }
+      if (result.state === 'ok') localStorage.removeItem(PROMPT_DISMISSED);
     } catch (err) {
       setError((err as Error).message);
     } finally {

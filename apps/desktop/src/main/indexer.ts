@@ -88,6 +88,8 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
     for (const [rel, size, mtime, thumb] of await api<[string, number, number, boolean][]>('GET', '/library/index')) {
       known.set(rel, { size, mtime, thumb });
     }
+    const imports = await api<{ relPath: string; kind: 'FOLDER' | 'FILE' }[]>('GET', '/library/imports');
+    const excluded = new Set((await api<string[]>('GET', '/library/exclusions')).map((rel) => rel.toLowerCase()));
     const seen: string[] = [];
     let batch: { relPath: string; size: number; mtime: string; kind: AssetKind; thumbnail?: string }[] = [];
     let lastRenew = Date.now();
@@ -100,7 +102,15 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
       lastRenew = Date.now();
     };
 
-    for await (const file of walk(root)) {
+    async function* selectedFiles(): AsyncGenerator<string> {
+      for (const item of imports) {
+        const abs = item.relPath ? path.join(root, ...item.relPath.split('/')) : root;
+        if (item.kind === 'FILE') yield abs;
+        else yield* walk(abs);
+      }
+    }
+
+    for await (const file of selectedFiles()) {
       let stat;
       try {
         stat = await fs.stat(file);
@@ -108,6 +118,7 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
         continue;
       }
       const relPath = toRelPath(root, file);
+      if (excluded.has(relPath.toLowerCase())) continue;
       seen.push(relPath);
       const kind = assetKindForPath(relPath);
       const prev = known.get(relPath);

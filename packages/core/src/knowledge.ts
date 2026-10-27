@@ -103,6 +103,14 @@ export async function embedKnowledge(sourceType: KnowledgeSourceType, sourceId: 
   return chunks.length;
 }
 
+/** Widths currently stored on knowledge chunks. Empty when nothing has been embedded. */
+export async function storedEmbedDims(): Promise<number[]> {
+  const rows = await prisma.$queryRawUnsafe<{ dims: number }[]>(
+    `SELECT DISTINCT vector_dims(embedding)::int AS dims FROM "KnowledgeChunk" WHERE embedding IS NOT NULL`,
+  );
+  return rows.map((row) => Number(row.dims)).sort((a, b) => a - b);
+}
+
 /** Re-embeds everything, e.g. after switching embedding providers. */
 export async function reindexAllKnowledge(): Promise<void> {
   await embedKnowledge('BRAND', 'brand');

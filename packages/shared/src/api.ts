@@ -72,6 +72,26 @@ export const libraryAssetBatchSchema = z.object({
   leaseToken: z.string(),
   assets: z.array(libraryAssetSchema).max(200),
 });
+export const libraryImportSchema = z.object({
+  relPath: z.string().default(''),
+  kind: z.enum(['FOLDER', 'FILE']),
+});
+export const libraryImportBatchSchema = z.object({
+  paths: z.array(libraryImportSchema).min(1).max(200),
+});
+export const libraryBatchEditSchema = z
+  .object({
+    ids: z.array(z.string()).min(1).max(200),
+    addTags: z.array(z.string().trim().min(1)).max(30).optional(),
+    productId: z.string().optional(),
+    /** Drop the files from the library index. The files stay on the shared drive. */
+    remove: z.boolean().optional(),
+  })
+  .refine((v) => v.addTags?.length || v.productId || v.remove, { message: 'Choose tags, a product, or remove' });
+export const libraryRelocateSchema = z.object({
+  folder: z.string().trim().min(1),
+  moves: z.array(z.object({ id: z.string(), relPath: z.string().min(1) })).min(1).max(200),
+});
 export const libraryScanCompleteSchema = z.object({
   leaseToken: z.string(),
   /** Every relPath seen during a full scan; anything else gets marked missing. */

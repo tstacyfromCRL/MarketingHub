@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, type Prisma } from '@mh/db';
-import { assetProductSchema, libraryAssetBatchSchema, libraryScanCompleteSchema } from '@mh/shared';
+import { assetProductSchema, libraryAssetBatchSchema, libraryBatchEditSchema, libraryRelocateSchema, libraryScanCompleteSchema, normalizeImportPath } from '@mh/shared';
 import { bus, enqueue, newStorageKey, randomToken, recordEvent, storage } from '@mh/core';
-import { authenticate, badRequest, conflict, HttpError } from '../http';
+import { authenticate, badRequest, conflict, HttpError, notFound } from '../http';
 
 const LEASE_MS = 5 * 60_000;
 
@@ -64,13 +64,14 @@ export async function assetRoutes(app: FastifyInstance) {
     const lease = await requireLease(body.leaseToken);
     let tagged = 0;
     for (const a of body.assets) {
+      const old = await prisma.asset.findUnique({ where: { libraryId_relPath: { libraryId: lease.libraryId, relPath: a.relPath } } });
+      if (old?.excluded) continue;
       let thumbnailKey: string | undefined;
       if (a.thumbnail) {
         thumbnailKey = newStorageKey('thumbs', 'png');
         await storage.put(thumbnailKey, Buffer.from(a.thumbnail, 'base64'), 'image/png');
       }
       const data = { size: BigInt(a.size), mtime: new Date(a.mtime), kind: a.kind, missing: false, indexedAt: new Date(), ...(thumbnailKey ? { thumbnailKey, needsTagging: true } : {}) };
-      const old = await prisma.asset.findUnique({ where: { libraryId_relPath: { libraryId: lease.libraryId, relPath: a.relPath } } });
       const asset = await prisma.asset.upsert({
         where: { libraryId_relPath: { libraryId: lease.libraryId, relPath: a.relPath } },
         update: data,
@@ -106,6 +107,68 @@ export async function assetRoutes(app: FastifyInstance) {
   // Browsing
   // ---------------------------------------------------------------------------
 
+  /** Paths a user removed from the library. The scanner must not add them back. */
+  app.get('/library/exclusions', async () => {
+    const lib = await prisma.library.findFirst();
+    if (!lib) return [];
+    const rows = await prisma.asset.findMany({ where: { libraryId: lib.id, excluded: true }, select: { relPath: true } });
+    return rows.map((row) => row.relPath);
+  });
+
+  /** Add tags, assign a product, or remove several files from the library at once. */
+  app.post('/library/assets/batch-edit', async (req) => {
+    const body = libraryBatchEditSchema.parse(req.body);
+    const lib = await theLibrary();
+    const assets = await prisma.asset.findMany({ where: { id: { in: body.ids }, libraryId: lib.id } });
+    if (body.remove) {
+      await prisma.asset.updateMany({ where: { id: { in: assets.map((a) => a.id) } }, data: { excluded: true, missing: true } });
+      await prisma.libraryImport.deleteMany({ where: { libraryId: lib.id, kind: 'FILE', relPath: { in: assets.map((a) => a.relPath) } } });
+      await recordEvent({
+        actorId: req.user.id, verb: 'remove', entityType: 'library', entityId: lib.id, link: '/library',
+        summary: `${req.user.name} removed ${assets.length} file${assets.length === 1 ? '' : 's'} from the library`,
+      });
+    }
+    if (body.addTags?.length) {
+      const extra = body.addTags.map((tag) => tag.toLowerCase());
+      for (const asset of assets) {
+        await prisma.asset.update({ where: { id: asset.id }, data: { tags: [...new Set([...asset.tags, ...extra])] } });
+      }
+    }
+    if (body.productId) {
+      for (const asset of assets) {
+        await prisma.assetProduct.upsert({
+          where: { assetId_productId: { assetId: asset.id, productId: body.productId } },
+          update: { confirmed: true },
+          create: { assetId: asset.id, productId: body.productId, confirmed: true, similarity: 1 },
+        });
+      }
+      await enqueue('rematch-products', { productId: body.productId });
+    }
+    return { ok: true, count: assets.length };
+  });
+
+  /** Points indexed files at a new folder after the desktop app has moved them on the shared drive. */
+  app.post('/library/assets/relocate', async (req) => {
+    const body = libraryRelocateSchema.parse(req.body);
+    const lib = await theLibrary();
+    const folder = normalizeImportPath(body.folder);
+    if (!folder || folder.split('/').some((part) => part === '..' || part === '.')) throw badRequest('Choose a folder inside the library');
+    for (const move of body.moves) {
+      const relPath = normalizeImportPath(move.relPath);
+      if (!relPath.toLowerCase().startsWith(`${folder.toLowerCase()}/`) || relPath.split('/').includes('..')) throw badRequest('That file would land outside the folder');
+      const asset = await prisma.asset.findFirst({ where: { id: move.id, libraryId: lib.id } });
+      if (!asset) throw notFound();
+      const taken = await prisma.asset.findUnique({ where: { libraryId_relPath: { libraryId: lib.id, relPath } } });
+      if (taken && taken.id !== asset.id) throw conflict(`"${relPath.split('/').pop()}" is already in that folder`);
+      await prisma.asset.update({ where: { id: asset.id }, data: { relPath } });
+    }
+    const existing = await prisma.libraryImport.findMany({ where: { libraryId: lib.id } });
+    if (!existing.some((row) => row.kind === 'FOLDER' && (row.relPath === '' || folder.toLowerCase() === row.relPath.toLowerCase() || folder.toLowerCase().startsWith(`${row.relPath.toLowerCase()}/`)))) {
+      await prisma.libraryImport.create({ data: { libraryId: lib.id, relPath: folder, kind: 'FOLDER', addedById: req.user.id } });
+    }
+    return { ok: true };
+  });
+
   app.get<{ Querystring: { q?: string; kind?: string; productId?: string; folder?: string; untagged?: string; page?: string } }>('/library/assets', async (req) => {
     const lib = await prisma.library.findFirst();
     if (!lib) return { items: [], total: 0 };
@@ -114,6 +177,7 @@ export async function assetRoutes(app: FastifyInstance) {
     const where: Prisma.AssetWhereInput = {
       libraryId: lib.id,
       missing: false,
+      excluded: false,
       kind: (req.query.kind as never) || undefined,
       relPath: req.query.folder ? { startsWith: `${req.query.folder.replace(/\/$/, '')}/` } : undefined,
       needsTagging: req.query.untagged ? true : undefined,
@@ -183,7 +247,7 @@ export async function assetRoutes(app: FastifyInstance) {
     const [byKind, untagged, missing] = await Promise.all([
       prisma.asset.groupBy({ by: ['kind'], where: { libraryId: lib.id, missing: false }, _count: true }),
       prisma.asset.count({ where: { libraryId: lib.id, missing: false, needsTagging: true, thumbnailKey: { not: null } } }),
-      prisma.asset.count({ where: { libraryId: lib.id, missing: true } }),
+      prisma.asset.count({ where: { libraryId: lib.id, missing: true, excluded: false } }),
     ]);
     return {
       byKind: Object.fromEntries(byKind.map((k) => [k.kind, k._count])),

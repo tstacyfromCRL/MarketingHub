@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { availableActions, transitionPost } from './postWorkflow';
 import { planCampaignSlots } from './campaign';
-import { resolveLibraryPath, toRelPath, toUncPath } from './library';
+import { collapseLibraryImports, resolveLibraryPath, toRelPath, toUncPath } from './library';
 import { brandColorsSchema, paletteInOrder, toHex } from './colors';
 
 describe('brand colors', () => {
@@ -70,6 +70,35 @@ describe('toRelPath', () => {
     expect(toRelPath('M:\\Media', 'M:\\Media\\Products\\hero.jpg')).toBe('Products/hero.jpg');
     expect(toRelPath('\\\\srv\\share\\Media\\', '\\\\srv\\share\\Media\\Products\\hero.jpg')).toBe('Products/hero.jpg');
     expect(() => toRelPath('M:\\Media', 'M:\\Other\\x.jpg')).toThrow();
+  });
+});
+
+describe('library import collapsing', () => {
+  const folder = (relPath: string) => ({ relPath, kind: 'FOLDER' as const });
+  const file = (relPath: string) => ({ relPath, kind: 'FILE' as const });
+
+  it('drops files and folders that sit inside an imported folder', () => {
+    const kept = collapseLibraryImports([
+      folder('Products'),
+      file('Products/Aurora Lamp/hero.jpg'),
+      folder('Products/Aurora Lamp'),
+      file('Video/launch.mp4'),
+    ]);
+    expect(kept.map((i) => i.relPath).sort()).toEqual(['Products', 'Video/launch.mp4']);
+  });
+
+  it('replaces narrower imports when a parent folder is added', () => {
+    const kept = collapseLibraryImports([
+      file('Campaigns/Spring/a.jpg'),
+      folder('Campaigns/Spring/Photos'),
+      folder('Campaigns'),
+    ]);
+    expect(kept).toEqual([folder('Campaigns')]);
+  });
+
+  it('treats the drive root as covering everything, and prefers a folder over a file at the same path', () => {
+    expect(collapseLibraryImports([file('Brand'), folder(''), file('Brand/logo.png')])).toEqual([folder('')]);
+    expect(collapseLibraryImports([file('Brand/logo.png'), folder('Brand/logo.png')])).toEqual([folder('Brand/logo.png')]);
   });
 });
 
