@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Bell, LogOut, Search, Settings } from 'lucide-react';
+import { Bell, LogOut, Settings } from 'lucide-react';
 import { BrandMark } from './BrandMark';
+import { FeatureHelp } from './FeatureHelp';
 import { useOnboarding } from '../pages/Onboarding';
 import { api, queryClient } from '../lib/api';
 import { isApprovalsPath, isBrandPath, isCampaignsPath, isContentPath, isLibraryPath, isStudioPath } from '../lib/sections';
@@ -12,12 +13,13 @@ import { timeAgo } from '../lib/format';
 import type { Notification } from '../lib/types';
 import { LibraryFirstRunPrompt } from './LibraryLocation';
 
-/** The four areas in the top bar. Studio covers the making of content; settings stays on the gear. */
+/** The top bar. Studio covers the making of content. Knowledge is its own item. Settings stays on the gear. */
 const NAV = [
   { to: '/', label: 'Home', active: (path: string) => path === '/' },
   { to: '/calendar', label: 'Calendar', active: (path: string) => path === '/calendar' || path.startsWith('/calendar/') },
   { to: '/tasks', label: 'Tasks', active: (path: string) => path === '/tasks' || path.startsWith('/tasks/') },
   { to: '/studio', label: 'Studio', active: isStudioPath },
+  { to: '/knowledge', label: 'Knowledge', active: (path: string) => path === '/knowledge' || path.startsWith('/knowledge/') },
 ];
 
 /** Reminds admins to finish the company setup wizard. */
@@ -40,7 +42,6 @@ export function Layout() {
   useRealtime();
   const { user, signOut } = useSession();
   const navigate = useNavigate();
-  const [q, setQ] = useState('');
   const [showNotes, setShowNotes] = useState(false);
 
   const notes = useQuery({ queryKey: ['notifications'], queryFn: () => api.get<Notification[]>('/notifications') });
@@ -66,17 +67,7 @@ export function Layout() {
           <Link to="/" title="Mantis" className="shrink-0">
             <BrandMark variant="icon" className="h-9 w-9" />
           </Link>
-          <form
-            className="relative ml-auto w-64"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (q.trim()) navigate(`/search?q=${encodeURIComponent(q.trim())}`);
-            }}
-          >
-            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-inktext/40" />
-            <input className="input py-1.5 pl-8 text-xs" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
-          </form>
-          <div className="flex items-center gap-1 text-sage">
+          <div className="ml-auto flex items-center gap-1 text-sage">
             <div className="relative">
               <button onClick={() => setShowNotes((s) => !s)} className="rounded-sm p-2 hover:bg-ink/60" title="Notifications">
                 <Bell className="h-4 w-4" />
@@ -115,7 +106,7 @@ export function Layout() {
             </button>
           </div>
         </div>
-        <nav className="flex flex-wrap gap-x-5 gap-y-1 border-t border-white/10 px-6">
+        <nav className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-white/10 px-6">
           {NAV.map(({ to, label, active }) => (
             <NavLink
               key={to}
@@ -126,6 +117,9 @@ export function Layout() {
               {label}
             </NavLink>
           ))}
+          <div className="ml-auto flex items-center">
+            <FeatureHelp />
+          </div>
         </nav>
         {inStudio && (
           <nav className="flex flex-wrap gap-x-5 gap-y-1 border-t border-white/5 px-6 pl-10">

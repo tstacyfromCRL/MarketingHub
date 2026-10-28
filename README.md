@@ -122,7 +122,7 @@ If the server is unreachable, those buttons stay disabled. Open Connection setti
 
 ### Screens
 
-After sign-in, the mantis icon sits at the left of the top bar. The top row is Home, Calendar, Tasks, and Studio. Settings is the gear icon. The icon links back to Home.
+After sign-in, the mantis icon sits at the left of the top bar. The top row is Home, Calendar, Tasks, Studio, and Knowledge. Settings is the gear icon. The icon links back to Home. The question mark at the right of that row explains the screen you are on: what it is for, how to use it, and why it matters. The same control is on the sign-in screen and on company setup. On Knowledge and Settings it follows the tab you have open.
 
 - **Home** is the view after sign-in.
 - **Calendar** holds scheduled posts and team events.
@@ -132,14 +132,12 @@ After sign-in, the mantis icon sits at the left of the top bar. The top row is H
   - **Campaigns** plans a set of posts across a date range and builds the graphics.
   - **Approvals** is the manager queue.
   - **Library** shows thumbnails of files imported from the shared drive.
-  - **Brand** holds the brand kit, products, knowledge base, and analytics.
+  - **Brand** holds the brand kit, products, the knowledge base, and analytics.
     - **Brand kit** is logos, colors, and fonts.
-    - **Products** are the products AI may mention and match in images.
-    - **Knowledge** is the brand profile, playbooks, approved claims, confidential names, products, connectors, documents, and crawled pages. Import / Export loads a knowledge pack. AI warnings on a post are shown, and they do not block the draft.
+    - **Products** are the products AI may mention and match in images. Knowledge → Products is where you set part numbers, price, what the product does, how it is used, documentation files and links, and competitor or partner websites and social pages. Brand → Products edits the same record.
     - **Analytics** summarizes posts and review time.
+- **Knowledge** is the brand profile, playbooks, approved claims, confidential names, products, connectors, documents, and crawled pages. On a product you can upload documentation or paste documentation links, record part numbers and a price, and describe what the product does and how it is used. Competitor and partner websites and social pages are read as market context, and the writer is told not to present them as our claims. Import / Export loads a knowledge pack. AI warnings on a post are shown, and they do not block the draft. Brand still links here.
 - **Settings** is your account, social connections (managers), the team (admins), the work log, and system status (admins). The work log is every significant action across the team.
-
-Search in the top bar covers posts, tasks, products, assets, and knowledge.
 
 ### Publishing a post
 

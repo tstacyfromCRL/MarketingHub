@@ -83,6 +83,14 @@ export function DesignEditorPage() {
   const placedLibraryAsset = useRef<string | null>(null);
   const docRef = useRef(doc);
   docRef.current = doc;
+  const setDoc = useCallback((next: DesignDoc) => {
+    setDocState((cur) => {
+      if (cur) setPast((p) => [...p.slice(-49), cur]);
+      return next;
+    });
+    setFuture([]);
+    setDirty(true);
+  }, []);
   useEffect(() => {
     if (id || !libraryAssetId || placedLibraryAsset.current) return;
     placedLibraryAsset.current = libraryAssetId;
@@ -120,14 +128,6 @@ export function DesignEditorPage() {
     })();
   }, [id, libraryAssetId, setDoc]);
 
-  const setDoc = useCallback((next: DesignDoc) => {
-    setDocState((cur) => {
-      if (cur) setPast((p) => [...p.slice(-49), cur]);
-      return next;
-    });
-    setFuture([]);
-    setDirty(true);
-  }, []);
   const undo = () => {
     if (!past.length || !doc) return;
     setFuture((f) => [doc, ...f]);

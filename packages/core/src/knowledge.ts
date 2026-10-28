@@ -1,5 +1,5 @@
 import { prisma, toVector, type Sensitivity } from '@mh/db';
-import { brandColorsSchema, type BrandProfileInput } from '@mh/shared';
+import { brandColorsSchema, MARKET_CONTEXT_NOTE, productKnowledgeText, type BrandProfileInput } from '@mh/shared';
 import { embedTexts } from './ai/providers';
 import { getDefaultOrgId } from './org';
 
@@ -85,18 +85,23 @@ async function parentFor(sourceType: KnowledgeSourceType, sourceId: string): Pro
     case 'PRODUCT': {
       const p = await prisma.product.findUnique({ where: { id: sourceId } });
       if (!p || !p.active) return null;
+      const markets = await prisma.marketLink.findMany({ where: { productId: p.id } });
       return {
         organizationId: p.organizationId,
         sensitivity: p.sensitivity,
         label: `Product: ${p.name}`,
-        text: [
-          `Product: ${p.name}${p.sku ? ` (SKU ${p.sku})` : ''}`,
-          p.description,
-          p.features.length ? `Features: ${p.features.join('; ')}` : '',
-          p.pricing && `Pricing: ${p.pricing}`,
-          p.url && `URL: ${p.url}`,
-        ]
-          .filter(Boolean).join('\n'),
+        text: productKnowledgeText({
+          name: p.name,
+          sku: p.sku,
+          partNumbers: p.partNumbers,
+          description: p.description,
+          usage: p.usage,
+          features: p.features,
+          pricing: p.pricing,
+          url: p.url,
+          competitors: markets.filter((link) => link.role === 'COMPETITOR'),
+          partners: markets.filter((link) => link.role === 'PARTNER'),
+        }),
       };
     }
     case 'ACCOMPLISHMENT': {
@@ -116,7 +121,8 @@ async function parentFor(sourceType: KnowledgeSourceType, sourceId: string): Pro
         organizationId: s.organizationId,
         sensitivity: s.sensitivity,
         label: s.title || s.url || 'Source',
-        text: `${s.title ? `${s.title}\n` : ''}${s.content}`,
+        // Competitor and partner pages stay in search, but the label keeps them out of "our" claims.
+        text: `${s.origin === 'market' ? `${MARKET_CONTEXT_NOTE}\n` : ''}${s.title ? `${s.title}\n` : ''}${s.content}`,
       };
     }
     case 'CLAIM': {

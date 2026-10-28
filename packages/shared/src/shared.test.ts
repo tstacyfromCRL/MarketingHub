@@ -3,7 +3,8 @@ import { availableActions, transitionPost } from './postWorkflow';
 import { planCampaignSlots } from './campaign';
 import { assetHiddenFromAi, collapseLibraryImports, resolveLibraryPath, toRelPath, toUncPath } from './library';
 import { brandColorsSchema, paletteInOrder, toHex } from './colors';
-import { taskSchema, taskUpdateSchema } from './api';
+import { marketLinkSchema, productSchema, taskSchema, taskUpdateSchema } from './api';
+import { isProductDocumentationLink, marketChannel, marketKnowledgeText, productKnowledgeText } from './productKnowledge';
 
 describe('brand colors', () => {
   it('converts hex, RGB and CMYK to screen hex', () => {
@@ -30,6 +31,46 @@ describe('brand colors', () => {
     expect(brandColorsSchema.safeParse(many).success).toBe(false);
     expect(brandColorsSchema.safeParse(many.slice(1)).success).toBe(true);
     expect(paletteInOrder(brandColorsSchema.parse([{ hex: '#333333', tier: 'TERTIARY' }, { hex: '#111111', tier: 'PRIMARY' }]))).toEqual(['#111111', '#333333']);
+  });
+});
+
+describe('product knowledge', () => {
+  it('keeps usage and part numbers optional so older product saves still parse', () => {
+    expect(productSchema.parse({ name: 'Ranger' }).usage).toBeUndefined();
+    expect(productSchema.parse({ name: 'Ranger', usage: 'Walks crop rows', partNumbers: ['PN-10'], pricing: '$1200' })).toMatchObject({
+      usage: 'Walks crop rows',
+      partNumbers: ['PN-10'],
+      pricing: '$1200',
+    });
+  });
+
+  it('writes what it does, how it is used, and labels outside companies', () => {
+    const text = productKnowledgeText({
+      name: 'Ranger',
+      sku: 'PN-10',
+      partNumbers: ['PN-10', 'PN-11'],
+      description: 'Carries sensors down a row.',
+      usage: 'An operator drives it from the field laptop.',
+      pricing: '$1200',
+      competitors: [{ name: 'Acme', url: 'https://acme.example' }],
+    });
+    expect(text).toContain('What it does: Carries sensors down a row.');
+    expect(text).toContain('How it is used: An operator drives it from the field laptop.');
+    expect(text).toContain('part numbers PN-10, PN-11');
+    expect(text).toContain('Price: $1200');
+    expect(text).toContain('Competitors, not our company: Acme (https://acme.example)');
+    expect(marketKnowledgeText([{ role: 'PARTNER', name: 'Beta', url: 'https://beta.example' }])).toContain('Partners, not our company');
+  });
+
+  it('tells a website from a social page, and does not treat uploads or market pages as documentation links', () => {
+    expect(marketChannel('https://www.linkedin.com/company/acme')).toBe('linkedin');
+    expect(marketChannel('https://docs.example.com/ranger')).toBe('website');
+    expect(marketLinkSchema.parse({ name: 'Acme', role: 'COMPETITOR', url: 'https://acme.example' }).role).toBe('COMPETITOR');
+    expect(isProductDocumentationLink({ origin: 'product-link', kind: 'WEBSITE' })).toBe(true);
+    expect(isProductDocumentationLink({ origin: 'manual', kind: 'WEBSITE' })).toBe(true);
+    expect(isProductDocumentationLink({ origin: 'upload', kind: 'DOCUMENT' })).toBe(false);
+    expect(isProductDocumentationLink({ origin: 'market', kind: 'WEBSITE' })).toBe(false);
+    expect(isProductDocumentationLink({ origin: 'market', kind: 'MANUAL' })).toBe(false);
   });
 });
 

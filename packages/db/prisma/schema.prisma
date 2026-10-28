@@ -305,6 +305,7 @@ model Organization {
   claims            Claim[]
   confidentialTerms ConfidentialTerm[]
   integrations      IntegrationSetting[]
+  marketLinks       MarketLink[]
 }
 
 enum Sensitivity {
@@ -359,11 +360,17 @@ model Product {
   organizationId String
   organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
+  /// Primary part number. Also the first entry of partNumbers when someone edits the list.
   sku            String         @default("")
+  /// What the product does.
   description    String         @default("")
+  /// How the product is used. Kept apart from description so the writer can tell the two apart.
+  usage          String         @default("")
   /// Pack-owned positioning. A connector sync must not overwrite this.
   positioning    String         @default("")
   features       String[]
+  /// Every part number, including the primary sku. A connector refresh does not clear this list.
+  partNumbers    String[]       @default([])
   /// Copy of pack-owned features so a connector refresh can restore them.
   packFeatures   String[]       @default([])
   url            String         @default("")
@@ -384,10 +391,35 @@ model Product {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   assets         AssetProduct[]
+  marketLinks    MarketLink[]
 
   @@unique([organizationId, externalKey])
   @@unique([organizationId, connectorKey])
   @@index([organizationId, sku])
+}
+
+enum MarketRole {
+  COMPETITOR
+  PARTNER
+}
+
+/// A competitor or partner website or social page. Its text is labeled as market context, not as our claim.
+model MarketLink {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String?
+  product        Product?     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name           String
+  role           MarketRole
+  url            String
+  channel        String       @default("website")
+  /// Source row that holds the scraped page, or the short social-link note when the host cannot be fetched.
+  sourceId       String?      @unique
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([productId])
 }
 
 model Accomplishment {
@@ -429,7 +461,7 @@ model Source {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   url            String?
   kind           SourceKind
-  /// Set for pages scraped from a product's links.
+  /// Set when this page belongs to a product: a documentation link, an upload, or a competitor/partner page.
   productId      String?
   /// Platform a SAMPLE_POST was published on, if known.
   platform       String?
@@ -439,6 +471,7 @@ model Source {
   error          String?
   sensitivity    Sensitivity  @default(PUBLIC)
   externalKey    String?
+  /// manual, pack, upload, product-link, or market. A documentation-link refresh only replaces product-link pages.
   origin         String       @default("manual")
   contentHash    String?
   recrawlDays    Int?

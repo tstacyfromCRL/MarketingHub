@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Link, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink, Plus, Trash2 } from 'lucide-react';
-import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
+import { api, fileUrl, queryClient } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { useProducts } from '../lib/hooks';
 import type { Asset, KnowledgeSource, Product } from '../lib/types';
-import { Badge, Button, Card, ChipInput, Empty, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui';
+import { Badge, Button, Card, Empty, Modal, PageHeader, Spinner } from '../components/ui';
+import { ProductDocuments, ProductKnowledgeEditor, MarketLinksPanel } from '../components/ProductKnowledgeEditor';
 
 export function ProductsPage() {
   return (
@@ -24,7 +25,7 @@ function ProductList() {
     <div>
       <PageHeader
         title="Products"
-        subtitle="What you sell. The AI uses descriptions, pricing and the linked pages when writing, and recognizes products in library photos."
+        subtitle="What you sell. Part numbers, price, what it does, how it is used, and documentation are the same record as Knowledge → Products."
         actions={<Button onClick={() => setEditing(true)}><Plus className="h-4 w-4" /> Add product</Button>}
       />
       {isLoading ? <Spinner /> : !data?.length ? <Empty>Add your products so the AI can write about them and recognize them in photos.</Empty> : (
@@ -35,7 +36,7 @@ function ProductList() {
                 <span className="font-medium">{p.name}</span>
                 {!p.active && <Badge>inactive</Badge>}
               </div>
-              <div className="text-xs text-slate-500">{[p.sku && `SKU ${p.sku}`, p.pricing].filter(Boolean).join(' · ')}</div>
+              <div className="text-xs text-slate-500">{[(p.partNumbers?.length ? p.partNumbers.join(', ') : p.sku), p.pricing].filter(Boolean).join(' · ')}</div>
               <p className="mt-2 line-clamp-2 text-sm text-slate-400">{p.description}</p>
               <div className="mt-2 text-xs text-slate-500">
                 {p._count?.assets ?? 0} confirmed photos{p.links.length ? ` · ${p.links.length} linked page${p.links.length === 1 ? '' : 's'}` : ''}
@@ -50,82 +51,9 @@ function ProductList() {
 }
 
 function ProductModal({ product, onClose }: { product?: Product; onClose: () => void }) {
-  const [p, setP] = useState({
-    name: product?.name ?? '',
-    sku: product?.sku ?? '',
-    description: product?.description ?? '',
-    features: product?.features ?? [],
-    url: product?.url ?? '',
-    pricing: product?.pricing ?? '',
-    links: product?.links ?? [],
-    active: product?.active ?? true,
-  });
-  const [newLink, setNewLink] = useState('');
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const addLink = () => {
-    const v = newLink.trim();
-    if (!v) return;
-    const url = /^https?:\/\//i.test(v) ? v : `https://${v}`;
-    try {
-      new URL(url);
-    } catch {
-      return setLinkError("That doesn't look like a web address");
-    }
-    setLinkError(null);
-    if (!p.links.includes(url)) setP({ ...p, links: [...p.links, url] });
-    setNewLink('');
-  };
-  const save = useMutation({
-    mutationFn: () => (product ? api.patch(`/products/${product.id}`, p) : api.post('/products', p)),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['products'] });
-      void queryClient.invalidateQueries({ queryKey: ['product'] });
-      void queryClient.invalidateQueries({ queryKey: ['sources'] });
-      onClose();
-    },
-  });
   return (
-    <Modal open onClose={onClose} title={product ? 'Edit product' : 'Add product'} width="max-w-xl">
-      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Name" className="col-span-2"><input className="input" value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} required /></Field>
-          <Field label="SKU"><input className="input" value={p.sku} onChange={(e) => setP({ ...p, sku: e.target.value })} /></Field>
-        </div>
-        <Field label="Description"><textarea className="input" rows={4} value={p.description} onChange={(e) => setP({ ...p, description: e.target.value })} /></Field>
-        <Field label="Key features"><ChipInput value={p.features} onChange={(v) => setP({ ...p, features: v })} /></Field>
-        <Field label="Pricing" hint='As you would say it publicly, e.g. "$49/month" or "From $1,200". The AI never makes prices up.'>
-          <input className="input" value={p.pricing} onChange={(e) => setP({ ...p, pricing: e.target.value })} />
-        </Field>
-        <Field label="Product page URL"><input className="input" value={p.url} onChange={(e) => setP({ ...p, url: e.target.value })} /></Field>
-        <div>
-          <span className="label">Pages for the AI to learn from</span>
-          <div className="space-y-1.5">
-            {p.links.map((l) => (
-              <div key={l} className="flex items-center gap-2 rounded-md bg-slate-800/60 px-2 py-1 text-sm">
-                <span className="flex-1 truncate" title={l}>{l}</span>
-                <button type="button" className="text-slate-500 hover:text-rose-400" onClick={() => setP({ ...p, links: p.links.filter((x) => x !== l) })}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-            <div className="flex gap-2">
-              <input
-                className="input flex-1"
-                placeholder="Spec sheet, product page, review, press release..."
-                value={newLink}
-                onChange={(e) => setNewLink(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } }}
-              />
-              <Button type="button" variant="secondary" onClick={addLink}><Plus className="h-4 w-4" /> Add</Button>
-            </div>
-            {linkError && <p className="text-xs text-rose-400">{linkError}</p>}
-            <p className="text-xs text-slate-500">Each page is read into the Knowledge Base and refreshed monthly.</p>
-          </div>
-        </div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={p.active} onChange={(e) => setP({ ...p, active: e.target.checked })} /> Active (include in content and matching)</label>
-        <ErrorText error={save.error ? errorMessage(save.error) : null} />
-        <div className="flex justify-end"><Button type="submit" loading={save.isPending}>Save</Button></div>
-      </form>
+    <Modal open onClose={onClose} title={product ? 'Edit product' : 'Add product'} width="max-w-2xl">
+      <ProductKnowledgeEditor product={product ?? null} onDone={onClose} />
     </Modal>
   );
 }
@@ -163,9 +91,25 @@ function ProductDetail() {
         <Button size="sm" variant="danger" onClick={() => window.confirm(`Delete ${data.name}?`) && del.mutate()}><Trash2 className="h-3.5 w-3.5" /></Button>
       </>}>
         {data.pricing && <div className="mb-2 text-sm font-medium text-emerald-300">{data.pricing}</div>}
-        <p className="whitespace-pre-wrap text-sm text-slate-300">{data.description || 'No description.'}</p>
+        {(data.partNumbers?.length || data.sku) && (
+          <div className="mb-2 text-xs text-slate-400">Part numbers: {(data.partNumbers?.length ? data.partNumbers : [data.sku]).join(', ')}</div>
+        )}
+        <p className="text-xs text-slate-500">What it does</p>
+        <p className="whitespace-pre-wrap text-sm text-slate-300">{data.description || 'No description yet.'}</p>
+        {data.usage && (
+          <>
+            <p className="mt-3 text-xs text-slate-500">How it is used</p>
+            <p className="whitespace-pre-wrap text-sm text-slate-300">{data.usage}</p>
+          </>
+        )}
         {data.features.length > 0 && <ul className="mt-3 list-disc pl-5 text-sm text-slate-400">{data.features.map((f) => <li key={f}>{f}</li>)}</ul>}
         {data.url && <button onClick={() => void window.api.app.openExternal(data.url)} className="mt-3 inline-flex items-center gap-1 text-sm text-indigo-300 hover:underline"><ExternalLink className="h-3.5 w-3.5" />{data.url}</button>}
+      </Card>
+      <Card title="Documentation and outside companies">
+        <div className="space-y-4">
+          <ProductDocuments productId={data.id} />
+          <MarketLinksPanel productId={data.id} />
+        </div>
       </Card>
       {pages.length > 0 && (
         <Card title="Pages the AI learned from">

@@ -11,6 +11,7 @@ import { isAdmin, useSession } from '../lib/session';
 import type { KnowledgeSource } from '../lib/types';
 import { BrandFileUploader, ColorTiersEditor, useBrandFiles } from '../components/BrandKit';
 import { BrandMark } from '../components/BrandMark';
+import { FeatureHelp } from '../components/FeatureHelp';
 import { Button, ErrorText, Field, Spinner } from '../components/ui';
 
 const WIZARD_STEPS: OnboardingStep[] = ['name', 'about', 'summary', 'logos', 'colors', 'voice', 'analyze', 'done'];
@@ -131,7 +132,10 @@ export function OnboardingPage() {
 
 function Centered({ children }: { children: ReactNode }) {
   return (
-    <div className="h-full overflow-auto bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
+    <div className="relative h-full overflow-auto bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
+      <div className="absolute right-4 top-4 z-10">
+        <FeatureHelp />
+      </div>
       <div className="mx-auto max-w-3xl px-8 py-10">{children}</div>
     </div>
   );

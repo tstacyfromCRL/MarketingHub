@@ -117,6 +117,10 @@ export interface Product {
   features: string[];
   url: string;
   pricing: string;
+  /** How the product is used. */
+  usage: string;
+  /** Every part number. The first is also sku. */
+  partNumbers: string[];
   links: string[];
   active: boolean;
   _count?: { assets: number };
@@ -134,6 +138,15 @@ export interface KnowledgeSource {
   createdAt: string;
   productId: string | null;
   platform: string | null;
+}
+
+export interface MarketLink {
+  id: string;
+  productId: string | null;
+  name: string;
+  role: 'COMPETITOR' | 'PARTNER';
+  url: string;
+  channel: string;
 }
 
 export interface Design {

@@ -296,6 +296,8 @@ export async function importKnowledgePack(orgId: string, dir: string, opts: { dr
         name: row.name, sku: row.sku ?? '', description: row.description, positioning: row.description, features: row.features,
         packFeatures: row.features, url: row.url ?? '', pricing: row.pricing ?? '', links: row.links, packLinks: row.links,
         sensitivity: row.sensitivity ?? 'PUBLIC', origin: 'pack', contentHash: hash, active: true,
+        ...(row.usage !== undefined ? { usage: row.usage } : {}),
+        ...(row.partNumbers !== undefined ? { partNumbers: row.partNumbers } : {}),
       };
       if (!existing) {
         note(report.products, row.key, 'created');
@@ -524,6 +526,7 @@ export async function exportKnowledgePack(orgId: string, dir: string): Promise<v
   const products = await prisma.product.findMany({ where: { organizationId: orgId, active: true } });
   await writeFile(path.join(dir, 'products.json'), JSON.stringify(products.map((row) => ({
     key: keyOf(row.externalKey, row.id), name: row.name, sku: row.sku, description: row.positioning || row.description,
+    usage: row.usage, partNumbers: row.partNumbers,
     features: row.packFeatures.length ? row.packFeatures : row.features, pricing: row.pricing, url: row.url,
     links: row.packLinks.length ? row.packLinks : row.links, sensitivity: row.sensitivity,
   })), null, 2));
@@ -536,7 +539,10 @@ export async function exportKnowledgePack(orgId: string, dir: string): Promise<v
   await writeFile(path.join(dir, 'accomplishments.json'), JSON.stringify(accomplishments.map((row) => ({
     key: keyOf(row.externalKey, row.id), title: row.title, description: row.description, date: row.date?.toISOString().slice(0, 10), sensitivity: row.sensitivity,
   })), null, 2));
-  const sources = await prisma.source.findMany({ where: { organizationId: orgId, kind: { in: ['WEBSITE', 'ARTICLE', 'LINKEDIN', 'MANUAL'] }, url: { not: null } } });
+  // Product documentation links and competitor/partner pages are stored on the product, not as company sources.
+  const sources = await prisma.source.findMany({
+    where: { organizationId: orgId, kind: { in: ['WEBSITE', 'ARTICLE', 'LINKEDIN', 'MANUAL'] }, url: { not: null }, origin: { notIn: ['market', 'product-link', 'upload'] } },
+  });
   await writeFile(path.join(dir, 'sources.json'), JSON.stringify(sources.filter((row) => row.url && !row.url.startsWith('storage:')).map((row) => ({
     key: keyOf(row.externalKey, row.id), url: row.url, kind: row.kind, recrawlDays: row.recrawlDays, sensitivity: row.sensitivity,
   })), null, 2));

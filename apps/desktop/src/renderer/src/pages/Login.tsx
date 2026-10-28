@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useSession, type User } from '../lib/session';
 import { BrandMark } from '../components/BrandMark';
+import { FeatureHelp } from '../components/FeatureHelp';
 import { Button, ErrorText, Field } from '../components/ui';
 
 type Mode = 'welcome' | 'company' | 'join' | 'login';
@@ -180,7 +181,10 @@ function Wordmark() {
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center bg-ink px-6">
+    <div className="relative flex h-full items-center justify-center bg-ink px-6">
+      <div className="absolute right-4 top-4">
+        <FeatureHelp path="/login" />
+      </div>
       <div className="w-full max-w-sm space-y-5">{children}</div>
     </div>
   );

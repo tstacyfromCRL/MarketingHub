@@ -43,6 +43,8 @@ export const packProductSchema = z.object({
   name: z.string().min(1),
   sku: z.string().optional(),
   description: z.string().default(''),
+  usage: z.string().optional(),
+  partNumbers: z.array(z.string()).optional(),
   features: z.array(z.string()).default([]),
   pricing: z.string().optional(),
   url: z.string().optional(),

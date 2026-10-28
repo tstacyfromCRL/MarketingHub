@@ -386,7 +386,7 @@ Knowledge is four different things, and generation treats them differently.
 
 Sensitivity: `RESTRICTED` is never embedded. When the text provider is `openai` or `anthropic`, `INTERNAL` chunks are left out of the prompt and the draft gets an `INTERNAL_OMITTED` warning. The `local` and `mock` providers may use internal chunks. This is option (b) in §6. There is no `Generation` table, so the warning is stored on the post.
 
-A knowledge pack (`knowledge-pack.example/`) is the portable copy of one company's knowledge. It has no organization id. `pnpm kb:import` and Knowledge → Import / Export load it into the company this server is running for. Product connectors (Shopify, and CSV as the second implementation) sync through `ProductSourceConnector`. A shared SKU keeps connector-owned name, price, URL, and description, and pack-owned features, positioning, and links.
+A knowledge pack (`knowledge-pack.example/`) is the portable copy of one company's knowledge. It has no organization id. `pnpm kb:import` and Knowledge → Import / Export load it into the company this server is running for. Product connectors (Shopify, and CSV as the second implementation) sync through `ProductSourceConnector`. A shared SKU keeps connector-owned name, price, URL, and description, and pack-owned features, positioning, and links. Usage, part numbers, uploaded documents, and competitor or partner links are kept when a connector refreshes. Competitor and partner passages are labeled as market context so they are not written as our claims.
 
 ### Tenancy readiness
 

@@ -4,6 +4,8 @@ import { api, download, errorMessage, queryClient } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { isManager, useSession } from '../lib/session';
 import { Badge, Button, Card, Empty, ErrorText, Field } from '../components/ui';
+import { MarketLinksPanel, ProductKnowledgeEditor } from '../components/ProductKnowledgeEditor';
+import type { Product } from '../lib/types';
 
 interface Playbook {
   id: string;
@@ -47,6 +49,8 @@ interface ProductRow {
   id: string;
   name: string;
   sku: string;
+  partNumbers: string[];
+  pricing: string;
   origin: string;
   connectorKey: string | null;
   lastSyncedAt: string | null;
@@ -226,6 +230,13 @@ export function ConfidentialTab() {
 export function KnowledgeProductsTab() {
   const { user } = useSession();
   const { data } = useQuery({ queryKey: ['products'], queryFn: () => api.get<ProductRow[]>('/products') });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const full = useQuery({
+    queryKey: ['product', editId],
+    queryFn: () => api.get<Product>(`/products/${editId}`),
+    enabled: Boolean(editId),
+  });
   const sync = useMutation({ mutationFn: () => api.post('/knowledge/products/sync', {}), onSuccess: () => refresh(['products']) });
   const upload = useMutation({
     mutationFn: (file: File) => {
@@ -236,22 +247,35 @@ export function KnowledgeProductsTab() {
     onSuccess: () => refresh(['products']),
   });
   if (!data) return null;
+  if (creating || editId) {
+    if (editId && !full.data) return null;
+    return (
+      <ProductKnowledgeEditor
+        key={editId ?? 'new'}
+        product={creating ? null : full.data ?? null}
+        onDone={() => { setCreating(false); setEditId(null); }}
+      />
+    );
+  }
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        {isManager(user) && <Button onClick={() => sync.mutate()} loading={sync.isPending}>Sync now</Button>}
+      <MarketLinksPanel productId={null} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => setCreating(true)}>Add product</Button>
+        {isManager(user) && <Button variant="secondary" onClick={() => sync.mutate()} loading={sync.isPending}>Sync now</Button>}
         {isManager(user) && <label className="inline-flex cursor-pointer items-center rounded-md border border-sage/40 px-3.5 py-2 text-sm text-sage">Import CSV or JSON<input type="file" accept=".csv,.json,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])} /></label>}
         <ErrorText error={sync.error ? errorMessage(sync.error) : upload.error ? errorMessage(upload.error) : null} />
       </div>
       <div className="card divide-y divide-slate-800">
-        {data.length === 0 && <Empty>No products yet.</Empty>}
+        {data.length === 0 && <Empty>No products yet. Add one to record part numbers, price, what it does, and how it is used.</Empty>}
         {data.map((row) => (
           <div key={row.id} className="flex items-center gap-3 px-4 py-2">
             <div className="flex-1">
               <div className="text-sm">{row.name}{row.active ? '' : ' (archived)'}</div>
-              <div className="text-xs text-slate-500">{row.sku}{row.lastSyncedAt ? ` · synced ${formatDate(row.lastSyncedAt)}` : ''}</div>
+              <div className="text-xs text-slate-500">{[row.partNumbers?.length ? row.partNumbers.join(', ') : row.sku, row.pricing, row.lastSyncedAt ? `synced ${formatDate(row.lastSyncedAt)}` : ''].filter(Boolean).join(' · ')}</div>
             </div>
             <Badge color="#6A8B5E">{originLabel(row)}</Badge>
+            <Button size="sm" variant="secondary" onClick={() => setEditId(row.id)}>Edit</Button>
           </div>
         ))}
       </div>

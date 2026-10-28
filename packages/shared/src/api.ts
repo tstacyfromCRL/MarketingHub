@@ -158,12 +158,24 @@ export type BrandProfileInput = z.infer<typeof brandProfileSchema>;
 export const productSchema = z.object({
   name: z.string().min(1),
   sku: z.string().default(''),
+  /** What the product does. */
   description: z.string().default(''),
+  /** How the product is used. Omitted on a partial update so a name-only patch does not clear it. */
+  usage: z.string().optional(),
+  /** Full part-number list. The first one is also stored as sku so catalog matching still works. */
+  partNumbers: z.array(z.string().trim().min(1).max(80)).max(40).optional(),
   features: z.array(z.string()).default([]),
   url: z.string().default(''),
   pricing: z.string().default(''),
   links: z.array(z.string().url()).max(20).default([]),
   active: z.boolean().default(true),
+});
+
+export const marketLinkSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  role: z.enum(['COMPETITOR', 'PARTNER']),
+  url: z.string().url(),
+  productId: z.string().nullable().optional(),
 });
 export const accomplishmentSchema = z.object({
   title: z.string().min(1),

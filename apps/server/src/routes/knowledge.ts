@@ -1,8 +1,23 @@
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
+import { z } from 'zod';
 import { prisma } from '@mh/db';
-import { accomplishmentSchema, brandProfileSchema, productSchema, sourceSchema } from '@mh/shared';
-import { brandProfile, enqueue, getDefaultOrgId, isLinkedIn, newStorageKey, recordEvent, retrieve, storage } from '@mh/core';
+import { SENSITIVITIES, accomplishmentSchema, brandProfileSchema, marketLinkSchema, productSchema, sourceSchema } from '@mh/shared';
+import {
+  MarketLinkError,
+  attachMarketLink,
+  brandProfile,
+  enqueue,
+  extractText,
+  getDefaultOrgId,
+  isLinkedIn,
+  newStorageKey,
+  recordEvent,
+  removeMarketLink,
+  removeProductKnowledge,
+  retrieve,
+  storage,
+} from '@mh/core';
 import { authenticate, badRequest, requireRole } from '../http';
 
 export async function knowledgeRoutes(app: FastifyInstance) {
@@ -80,7 +95,23 @@ export async function knowledgeRoutes(app: FastifyInstance) {
 
   app.post('/products', async (req) => {
     const body = productSchema.parse(req.body);
-    const p = await prisma.product.create({ data: { ...body, organizationId: await getDefaultOrgId() } });
+    const partNumbers = body.partNumbers ?? (body.sku ? [body.sku] : []);
+    const sku = body.sku || partNumbers[0] || '';
+    const p = await prisma.product.create({
+      data: {
+        name: body.name,
+        sku,
+        description: body.description,
+        usage: body.usage ?? '',
+        partNumbers: partNumbers.length ? partNumbers : sku ? [sku] : [],
+        features: body.features,
+        url: body.url,
+        pricing: body.pricing,
+        links: body.links,
+        active: body.active,
+        organizationId: await getDefaultOrgId(),
+      },
+    });
     await enqueue('embed-knowledge', { orgId: p.organizationId, sourceType: 'PRODUCT', sourceId: p.id });
     await enqueue('rematch-products', { productId: p.id });
     if (p.links.length) await enqueue('scrape-product-links', { productId: p.id });
@@ -90,7 +121,9 @@ export async function knowledgeRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string } }>('/products/:id', async (req) => {
     const body = productSchema.partial().parse(req.body);
-    const p = await prisma.product.update({ where: { id: req.params.id }, data: body });
+    const data = { ...body };
+    if (body.partNumbers) data.sku = body.sku || body.partNumbers[0] || '';
+    const p = await prisma.product.update({ where: { id: req.params.id }, data });
     await enqueue('embed-knowledge', { orgId: p.organizationId, sourceType: 'PRODUCT', sourceId: p.id });
     if (body.links) await enqueue('scrape-product-links', { productId: p.id });
     await recordEvent({ actorId: req.user.id, verb: 'update', entityType: 'product', entityId: p.id, summary: `Product "${p.name}" updated by ${req.user.name}`, link: `/products/${p.id}` });
@@ -98,10 +131,112 @@ export async function knowledgeRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { id: string } }>('/products/:id', async (req) => {
+    await removeProductKnowledge(req.params.id);
     const p = await prisma.product.delete({ where: { id: req.params.id } });
     await enqueue('embed-knowledge', { orgId: p.organizationId, sourceType: 'PRODUCT', sourceId: p.id });
     await enqueue('scrape-product-links', { productId: p.id });
     await recordEvent({ actorId: req.user.id, verb: 'delete', entityType: 'product', entityId: p.id, summary: `Product "${p.name}" removed by ${req.user.name}`, link: '/products' });
+    return { ok: true };
+  });
+
+  const sensitivity = z.enum(SENSITIVITIES);
+
+  app.get<{ Params: { id: string } }>('/products/:id/documents', async (req) => {
+    const organizationId = await getDefaultOrgId();
+    return prisma.source.findMany({
+      where: { organizationId, productId: req.params.id, kind: 'DOCUMENT' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, title: true, status: true, sensitivity: true, createdAt: true },
+    });
+  });
+
+  app.post<{ Params: { id: string }; Querystring: { sensitivity?: string } }>('/products/:id/documents', async (req) => {
+    const organizationId = await getDefaultOrgId();
+    const product = await prisma.product.findFirst({ where: { id: req.params.id, organizationId } });
+    if (!product) throw badRequest('Unknown product');
+    const file = await req.file();
+    if (!file) throw badRequest('No file uploaded');
+    const level = sensitivity.parse(req.query.sensitivity ?? 'PUBLIC');
+    const bytes = await file.toBuffer();
+    const text = await extractText(bytes, file.filename).catch((err: Error) => {
+      throw badRequest(err.message);
+    });
+    const ext = file.filename.split('.').pop() ?? 'bin';
+    const storageKey = newStorageKey(`orgs/${organizationId}/documents`, ext);
+    await storage.put(storageKey, bytes, file.mimetype || 'application/octet-stream');
+    const row = await prisma.source.create({
+      data: {
+        organizationId,
+        productId: product.id,
+        kind: 'DOCUMENT',
+        title: file.filename,
+        content: text,
+        status: 'OK',
+        sensitivity: level,
+        origin: 'upload',
+        url: `storage:${storageKey}`,
+      },
+    });
+    await enqueue('embed-knowledge', { orgId: organizationId, sourceType: 'SOURCE', sourceId: row.id }).catch(() => undefined);
+    await recordEvent({ actorId: req.user.id, verb: 'upload', entityType: 'document', entityId: row.id, summary: `Document "${file.filename}" added to ${product.name} by ${req.user.name}`, link: '/knowledge/catalog' });
+    return row;
+  });
+
+  app.delete<{ Params: { id: string; sourceId: string } }>('/products/:id/documents/:sourceId', async (req) => {
+    const row = await prisma.source.findFirst({ where: { id: req.params.sourceId, productId: req.params.id, kind: 'DOCUMENT' } });
+    if (!row) throw badRequest('Unknown document');
+    await prisma.source.delete({ where: { id: row.id } });
+    await prisma.knowledgeChunk.deleteMany({ where: { sourceId: row.id } });
+    await recordEvent({ actorId: req.user.id, verb: 'delete', entityType: 'document', entityId: row.id, summary: `Document "${row.title}" removed by ${req.user.name}`, link: '/knowledge/catalog' });
+    return { ok: true };
+  });
+
+  app.get<{ Querystring: { productId?: string } }>('/market-links', async (req) => {
+    const organizationId = await getDefaultOrgId();
+    const productId = req.query.productId;
+    return prisma.marketLink.findMany({
+      where: {
+        organizationId,
+        ...(productId === 'company' ? { productId: null } : productId ? { productId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  app.post('/market-links', async (req) => {
+    const body = marketLinkSchema.parse(req.body);
+    const organizationId = await getDefaultOrgId();
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: body.productId, organizationId } });
+      if (!product) throw badRequest('Unknown product');
+    }
+    try {
+      const link = await attachMarketLink({
+        organizationId,
+        productId: body.productId,
+        name: body.name,
+        role: body.role,
+        url: body.url,
+      });
+      await recordEvent({
+        actorId: req.user.id,
+        verb: 'create',
+        entityType: 'market-link',
+        entityId: link.id,
+        summary: `${body.role === 'COMPETITOR' ? 'Competitor' : 'Partner'} "${body.name}" added by ${req.user.name}`,
+        link: '/knowledge/catalog',
+      });
+      return link;
+    } catch (err) {
+      if (err instanceof MarketLinkError) throw badRequest(err.message);
+      throw err;
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>('/market-links/:id', async (req) => {
+    const link = await removeMarketLink(req.params.id);
+    if (!link) throw badRequest('Unknown link');
+    await recordEvent({ actorId: req.user.id, verb: 'delete', entityType: 'market-link', entityId: link.id, summary: `${link.name} removed by ${req.user.name}`, link: '/knowledge/catalog' });
     return { ok: true };
   });
 
@@ -135,7 +270,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
   // ---- Sources (links to scrape, or pasted text) ----
   app.get('/sources', async () =>
     prisma.source.findMany({
-      where: { organizationId: await getDefaultOrgId(), kind: { not: 'DOCUMENT' } },
+      where: { organizationId: await getDefaultOrgId(), kind: { not: 'DOCUMENT' }, origin: { not: 'market' } },
       orderBy: { createdAt: 'desc' },
       select: { id: true, url: true, kind: true, title: true, status: true, error: true, recrawlDays: true, lastCrawledAt: true, createdAt: true, productId: true, platform: true },
     }),

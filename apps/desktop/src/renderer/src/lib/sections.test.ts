@@ -3,18 +3,20 @@ import { isApprovalsPath, isBrandPath, isCampaignsPath, isContentPath, isLibrary
 
 describe('studio sections', () => {
   it('keeps campaigns, approvals, library, and brand inside studio', () => {
-    for (const path of ['/studio', '/campaigns', '/campaigns/new', '/approvals', '/library', '/brand-kit', '/products/abc', '/knowledge/profile', '/analytics']) {
+    for (const path of ['/studio', '/campaigns', '/campaigns/new', '/approvals', '/library', '/brand-kit', '/products/abc', '/analytics']) {
       expect(isStudioPath(path)).toBe(true);
     }
-    for (const path of ['/', '/calendar', '/tasks', '/tasks/1', '/settings', '/settings/log']) {
+    for (const path of ['/', '/calendar', '/tasks', '/tasks/1', '/knowledge', '/knowledge/profile', '/settings', '/settings/log']) {
       expect(isStudioPath(path)).toBe(false);
     }
   });
 
-  it('keeps products, knowledge, and analytics inside brand', () => {
-    for (const path of ['/brand-kit', '/products', '/products/abc', '/knowledge/sources', '/analytics']) {
+  it('keeps products and analytics inside brand, and the knowledge base on its own', () => {
+    for (const path of ['/brand-kit', '/products', '/products/abc', '/analytics']) {
       expect(isBrandPath(path)).toBe(true);
     }
+    expect(isBrandPath('/knowledge')).toBe(false);
+    expect(isBrandPath('/knowledge/sources')).toBe(false);
     expect(isBrandPath('/library')).toBe(false);
     expect(isBrandPath('/campaigns')).toBe(false);
   });

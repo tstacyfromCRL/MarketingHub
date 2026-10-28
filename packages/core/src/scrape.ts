@@ -1,6 +1,7 @@
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import { prisma } from '@mh/db';
+import { isProductDocumentationLink } from '@mh/shared';
 import { embedKnowledge } from './knowledge';
 import { recordEvent } from './activity';
 
@@ -66,15 +67,30 @@ export async function scrapeProductLinks(productId: string): Promise<void> {
   const product = await prisma.product.findUnique({ where: { id: productId } });
   const links = product ? [...new Set(product.links)] : [];
   const current = await prisma.source.findMany({ where: { productId } });
-  for (const s of current.filter((s) => !s.url || !links.includes(s.url))) {
+  // Uploaded documents and competitor/partner pages share productId, but they are not this link list.
+  const managed = current.filter((source) => isProductDocumentationLink(source));
+  for (const s of managed.filter((s) => !s.url || !links.includes(s.url))) {
     await prisma.source.delete({ where: { id: s.id } });
     await embedKnowledge('SOURCE', s.id);
   }
   for (const url of links) {
-    const existing = current.find((s) => s.url === url);
+    const existing = managed.find((s) => s.url === url);
     const s =
       existing ??
-      (await prisma.source.create({ data: { organizationId: product!.organizationId, url, kind: isLinkedIn(url) ? 'LINKEDIN' : 'WEBSITE', productId, title: `${product!.name}: ${url}`, recrawlDays: 30 } }));
+      (await prisma.source.create({
+        data: {
+          organizationId: product!.organizationId,
+          url,
+          kind: isLinkedIn(url) ? 'LINKEDIN' : 'WEBSITE',
+          productId,
+          title: `${product!.name}: ${url}`,
+          origin: 'product-link',
+          recrawlDays: 30,
+        },
+      }));
+    if (existing && existing.origin !== 'product-link') {
+      await prisma.source.update({ where: { id: existing.id }, data: { origin: 'product-link' } });
+    }
     await scrapeSource(s.id);
   }
 }

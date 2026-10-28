@@ -150,7 +150,7 @@ export function ChipInput({ value, onChange, placeholder }: { value: string[]; o
       {value.map((v, i) => (
         <span key={`${v}-${i}`} className="inline-flex items-center gap-1 rounded-sm bg-chrome px-2 py-0.5 text-xs text-mist">
           {v}
-          <button onClick={() => onChange(value.filter((_, j) => j !== i))} className="text-slate-500 hover:text-slate-200">
+          <button onClick={() => onChange(value.filter((_, j) => j !== i))} className="text-slate-500 hover:text-slate-200" type="button">
             <X className="h-3 w-3" />
           </button>
         </span>

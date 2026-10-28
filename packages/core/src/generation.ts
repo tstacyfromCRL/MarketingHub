@@ -2,7 +2,9 @@ import { prisma } from '@mh/db';
 import {
   PLATFORM_PRESETS,
   newLayerId,
+  marketKnowledgeText,
   paletteInOrder,
+  productKnowledgeText,
   type ContentType,
   type DesignDoc,
   type Layer,
@@ -61,13 +63,19 @@ async function styleExamples(orgId: string, brief: string, platform: Platform | 
   return { ids: new Set(samples.map((s) => s.id)), texts: scored.map(({ s }) => `${s.platform ? `(${s.platform}) ` : ''}${s.content.trim().slice(0, 1200)}`) };
 }
 
-const productFact = (p: { name: string; description: string; features: string[]; pricing: string; url: string }) =>
-  `Product ${p.name}: ${p.description}${p.features.length ? ` Features: ${p.features.join('; ')}.` : ''}${p.pricing ? ` Pricing: ${p.pricing}.` : ''}${p.url ? ` URL: ${p.url}` : ''}`;
+const productFact = (p: { name: string; sku: string; partNumbers: string[]; description: string; usage: string; features: string[]; pricing: string; url: string }) =>
+  productKnowledgeText(p);
 
 /** System prompt from the brand profile plus retrieved knowledge relevant to the brief. */
 export async function buildBrandContext(orgId: string, brief: string, productIds: string[] = [], platform?: Platform): Promise<BrandContext> {
   const brand = await brandProfile(orgId);
   const products = productIds.length ? await prisma.product.findMany({ where: { id: { in: productIds }, organizationId: orgId } }) : [];
+  const markets = await prisma.marketLink.findMany({
+    where: {
+      organizationId: orgId,
+      OR: [{ productId: null }, ...(productIds.length ? [{ productId: { in: productIds } }] : [])],
+    },
+  });
   const [retrievedRaw, examples, linkedClaims, terms] = await Promise.all([
     retrieve(orgId, [brief, ...products.map((p) => p.name)].join(' '), 10).catch(() => [] as RetrievedChunk[]),
     styleExamples(orgId, brief, platform),
@@ -87,8 +95,9 @@ export async function buildBrandContext(orgId: string, brief: string, productIds
   // Sample posts and claim chunks are not facts. Samples are tone. Claims get their own block.
   const facts = [
     ...products.map(productFact),
+    marketKnowledgeText(markets),
     ...kept.filter((r) => r.sourceType !== 'CLAIM' && !(r.sourceType === 'SOURCE' && examples.ids.has(r.sourceId))).slice(0, 8).map((r) => r.text),
-  ];
+  ].filter(Boolean);
   const claimTexts = [
     ...kept.filter((r) => r.sourceType === 'CLAIM').map((r) => r.text),
     ...linkedClaims.filter((claim) => claim.sensitivity !== 'RESTRICTED' && (config.AI_TEXT_PROVIDER === 'local' || config.AI_TEXT_PROVIDER === 'mock' || claim.sensitivity === 'PUBLIC')).map((claim) => claim.text),
@@ -109,6 +118,7 @@ export async function buildBrandContext(orgId: string, brief: string, productIds
         `Do not copy their wording or reuse their facts.\n${examples.texts.map((t, i) => `--- Example ${i + 1}\n${t}`).join('\n')}`
       : '',
     'Only use numbers, statistics, customer results and awards that appear in Approved claims or Company knowledge. If none fit, write without them.',
+    'Lines and passages about a competitor or partner are market context. Do not present them as our product, our price, or our claim.',
   ].filter(Boolean).join('\n\n');
   return {
     system,
@@ -118,7 +128,7 @@ export async function buildBrandContext(orgId: string, brief: string, productIds
     headingFont: brand.fonts.find((f) => /head|display|title/i.test(f.role))?.family ?? brand.fonts[0]?.family ?? 'Arial',
     bodyFont: brand.fonts.find((f) => /body|text/i.test(f.role))?.family ?? brand.fonts[0]?.family ?? 'Arial',
     productNames: products.map((p) => p.name),
-    productSkus: products.map((p) => p.sku).filter(Boolean),
+    productSkus: products.flatMap((p) => [p.sku, ...p.partNumbers]).filter(Boolean),
     claims: [...new Set(claimTexts)],
     confidential: terms.map((term) => ({ term: term.term, aliases: term.aliases })).flatMap((term) => [term.term, ...term.aliases]),
     donts: brand.donts,
