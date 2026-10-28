@@ -122,7 +122,7 @@ If the server is unreachable, those buttons stay disabled. Open Connection setti
 
 ### Screens
 
-After sign-in, the mantis icon sits at the left of the top bar. The top row is Home, Calendar, Tasks, Studio, and Knowledge. Settings is the gear icon. The icon links back to Home. The question mark at the right of that row explains the screen you are on: what it is for, how to use it, and why it matters. The same control is on the sign-in screen and on company setup. On Knowledge and Settings it follows the tab you have open.
+After sign-in, the mantis icon sits at the left of the top bar. The top row is Home, Calendar, Tasks, Studio, and Knowledge. Settings is the gear icon. The icon links back to Home. The question mark at the right of that row explains the screen you are on: what it is for, how to use it, and why it matters. The same control is on the sign-in screen and on company setup. On Knowledge and Settings it follows the tab you have open. A text box at the bottom of signed-in screens can start a post draft or a task from a plain sentence, such as a LinkedIn post for next week or a task for a teammate tomorrow. It asks when a name or network is unclear. It does not publish, approve, or delete. Those stay on their buttons. Set `AI_TEXT_PROVIDER=openai` and `OPENAI_API_KEY` when you want wording beyond those examples. With `mock`, the two example shapes still work.
 
 - **Home** is the view after sign-in.
 - **Calendar** holds scheduled posts and team events.

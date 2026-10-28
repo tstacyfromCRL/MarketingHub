@@ -26,6 +26,7 @@ import { campaignRoutes } from './routes/campaigns';
 import { socialRoutes } from './routes/social';
 import { adminRoutes } from './routes/admin';
 import { onboardingRoutes } from './routes/onboarding';
+import { promptRoutes } from './routes/prompt';
 
 (BigInt.prototype as unknown as { toJSON: () => number }).toJSON = function (this: bigint) {
   return Number(this);
@@ -77,6 +78,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(socialRoutes);
   await app.register(adminRoutes);
   await app.register(onboardingRoutes);
+  await app.register(promptRoutes);
 
   return app;
 }

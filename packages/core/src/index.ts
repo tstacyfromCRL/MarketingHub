@@ -28,6 +28,7 @@ export * from './designs';
 export * from './posts';
 export * from './social';
 export * from './publish';
+export * from './prompt';
 export * from './campaigns';
 export * from './onboarding';
 export * from './jobs';

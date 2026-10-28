@@ -17,7 +17,7 @@ interface Topic {
 const home: FeatureHelp = {
   title: 'Home',
   purpose: 'Home is your starting point after you sign in. It shows what is waiting on you.',
-  how: 'Look at posts that need you, your tasks, and what is coming up. Open any item to work on it. A banner here also brings you back to company setup if that is unfinished.',
+  how: 'Look at posts that need you, your tasks, and what is coming up. Open any item to work on it. The box at the bottom of the screen can start a draft or a task from a sentence. A banner here also brings you back to company setup if that is unfinished.',
   why: 'You can see the work that needs a person before you go looking through the other screens.',
 };
 
