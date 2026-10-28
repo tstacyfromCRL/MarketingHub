@@ -17,6 +17,7 @@ import { taskRoutes } from './routes/tasks';
 import { activityRoutes } from './routes/activity';
 import { calendarRoutes } from './routes/calendar';
 import { knowledgeRoutes } from './routes/knowledge';
+import { knowledgeAdminRoutes } from './routes/knowledgeAdmin';
 import { assetRoutes } from './routes/assets';
 import { generationRoutes } from './routes/generation';
 import { designRoutes } from './routes/designs';
@@ -67,6 +68,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(activityRoutes);
   await app.register(calendarRoutes);
   await app.register(knowledgeRoutes);
+  await app.register(knowledgeAdminRoutes);
   await app.register(assetRoutes);
   await app.register(generationRoutes);
   await app.register(designRoutes);

@@ -36,6 +36,7 @@ export interface Task {
   stageId: string;
   order: number;
   dueDate: string | null;
+  active: boolean;
   assigneeId: string | null;
   assignee: UserRef | null;
   creator: UserRef;
@@ -48,10 +49,16 @@ export interface DesignRef {
   previewKey: string | null;
 }
 
+export interface AiWarning {
+  code: string;
+  message: string;
+}
+
 export interface Variant {
   id: string;
   platform: Platform;
   body: string;
+  aiWarnings?: AiWarning[];
   designId: string | null;
   design: DesignRef | null;
   status: 'PENDING' | 'POSTED' | 'FAILED';
@@ -64,6 +71,7 @@ export interface Post {
   id: string;
   title: string;
   body: string;
+  aiWarnings?: AiWarning[];
   platforms: Platform[];
   perPlatformFiles: boolean;
   status: PostStatus;
@@ -96,6 +104,8 @@ export interface Asset {
   description: string;
   tags: string[];
   needsTagging: boolean;
+  /** Grayed in the library. AI tagging, matching, and generated graphics skip it. */
+  notForPublicUse: boolean;
   products: { productId: string; similarity: number; confirmed: boolean | null; product: { id: string; name: string } }[];
 }
 

@@ -9,8 +9,8 @@ export async function generationRoutes(app: FastifyInstance) {
 
   app.post('/generate/text', async (req) => {
     const body = generateTextSchema.parse(req.body);
-    const text = await generateContent(body);
-    return { text };
+    const result = await generateContent(body);
+    return result;
   });
 
   app.post('/generate/image', async (req) => {

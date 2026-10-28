@@ -14,6 +14,7 @@ import {
 import { describeImage, generateText, parseJson } from './ai/providers';
 import { bus } from './bus';
 import { brandProfile, embedKnowledge } from './knowledge';
+import { getDefaultOrgId } from './org';
 import { extractReadable, isLinkedIn } from './scrape';
 import { storage } from './storage';
 
@@ -93,11 +94,12 @@ async function interestingLinks(homepage: string): Promise<string[]> {
 
 /** Saves (or refreshes) a scraped page as a WEBSITE knowledge source. */
 async function saveWebsiteSource(url: string, title: string, content: string): Promise<string> {
-  const existing = await prisma.source.findFirst({ where: { url } });
+  const organizationId = await getDefaultOrgId();
+  const existing = await prisma.source.findFirst({ where: { url, organizationId } });
   const data = { kind: 'WEBSITE' as const, title, content, status: 'OK' as const, error: null, lastCrawledAt: new Date() };
   const s = existing
     ? await prisma.source.update({ where: { id: existing.id }, data })
-    : await prisma.source.create({ data: { url, recrawlDays: 30, ...data } });
+    : await prisma.source.create({ data: { url, organizationId, recrawlDays: 30, ...data } });
   await embedKnowledge('SOURCE', s.id).catch(() => 0);
   return s.id;
 }
@@ -266,7 +268,7 @@ export async function analyzeBrand(): Promise<void> {
     await step('voice', async () => {
       const guide = await writeVoiceGuide({ brand, samples, websiteText, logoNotes });
       await prisma.brandProfile.update({
-        where: { id: 'brand' },
+        where: { id: brand.id },
         data: {
           voice: guide.voice || brand.voice,
           dos: guide.dos.length ? guide.dos : brand.dos,
@@ -274,7 +276,7 @@ export async function analyzeBrand(): Promise<void> {
           visualIdentity: guide.visualIdentity || brand.visualIdentity,
         },
       });
-      await embedKnowledge('BRAND', 'brand').catch(() => 0);
+      await embedKnowledge('BRAND', brand.id).catch(() => 0);
     });
 
     progress.current = null;

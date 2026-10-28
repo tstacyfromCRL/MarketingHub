@@ -187,7 +187,7 @@ function ProductDetail() {
         {data.assets.length === 0 ? <Empty>No matches yet. Confirm this product on a few library photos and similar ones will be suggested automatically.</Empty> : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
             {data.assets.map(({ asset, similarity, confirmed }) => (
-              <div key={asset.id} className="overflow-hidden rounded-md border border-slate-800">
+              <div key={asset.id} className={`overflow-hidden rounded-md border border-slate-800 ${asset.notForPublicUse ? 'opacity-50 grayscale' : ''}`} title={asset.notForPublicUse ? 'Not for public use' : undefined}>
                 <Link to={`/library?asset=${asset.id}`}>
                   {asset.thumbnailKey ? <img src={fileUrl(asset.thumbnailKey)} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-slate-900" />}
                 </Link>

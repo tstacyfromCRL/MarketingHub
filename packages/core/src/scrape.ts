@@ -74,14 +74,14 @@ export async function scrapeProductLinks(productId: string): Promise<void> {
     const existing = current.find((s) => s.url === url);
     const s =
       existing ??
-      (await prisma.source.create({ data: { url, kind: isLinkedIn(url) ? 'LINKEDIN' : 'WEBSITE', productId, title: `${product!.name}: ${url}`, recrawlDays: 30 } }));
+      (await prisma.source.create({ data: { organizationId: product!.organizationId, url, kind: isLinkedIn(url) ? 'LINKEDIN' : 'WEBSITE', productId, title: `${product!.name}: ${url}`, recrawlDays: 30 } }));
     await scrapeSource(s.id);
   }
 }
 
 /** Sources that opted into re-crawling and are due. */
-export async function dueRecrawlSourceIds(): Promise<string[]> {
-  const sources = await prisma.source.findMany({ where: { recrawlDays: { not: null }, url: { not: null } } });
+export async function dueRecrawlSourceIds(orgId?: string): Promise<string[]> {
+  const sources = await prisma.source.findMany({ where: { organizationId: orgId, recrawlDays: { not: null }, url: { not: null }, kind: { notIn: ['SAMPLE_POST', 'MANUAL', 'DOCUMENT'] } } });
   const now = Date.now();
   return sources
     .filter((s) => !s.lastCrawledAt || now - s.lastCrawledAt.getTime() > s.recrawlDays! * 86_400_000)

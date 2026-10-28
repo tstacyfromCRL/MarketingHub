@@ -1,8 +1,14 @@
-import { prisma, toVector } from '@mh/db';
+import { prisma, toVector, type Sensitivity } from '@mh/db';
 import { brandColorsSchema, type BrandProfileInput } from '@mh/shared';
 import { embedTexts } from './ai/providers';
+import { getDefaultOrgId } from './org';
 
-export type KnowledgeSourceType = 'BRAND' | 'PRODUCT' | 'ACCOMPLISHMENT' | 'SOURCE';
+export type KnowledgeSourceType = 'BRAND' | 'PRODUCT' | 'ACCOMPLISHMENT' | 'SOURCE' | 'CLAIM';
+
+export interface BrandProfileRecord extends BrandProfileInput {
+  id: string;
+  organizationId: string;
+}
 
 /** Splits text into ~`size` character chunks on paragraph/sentence boundaries with overlap. */
 export function chunkText(text: string, size = 900, overlap = 150): string[] {
@@ -24,10 +30,14 @@ export function chunkText(text: string, size = 900, overlap = 150): string[] {
   return chunks;
 }
 
-export async function brandProfile(): Promise<BrandProfileInput> {
-  const p = await prisma.brandProfile.upsert({ where: { id: 'brand' }, update: {}, create: { id: 'brand', dos: [], donts: [] } });
+/** The brand profile for an org. Defaults to the one company this server runs for. */
+export async function brandProfile(orgId?: string): Promise<BrandProfileRecord> {
+  const organizationId = orgId ?? (await getDefaultOrgId());
+  const p = await prisma.brandProfile.upsert({ where: { organizationId }, update: {}, create: { organizationId, dos: [], donts: [] } });
   const colors = brandColorsSchema.safeParse(p.colors);
   return {
+    id: p.id,
+    organizationId,
     companyName: p.companyName,
     summary: p.summary,
     website: p.website,
@@ -43,11 +53,22 @@ export async function brandProfile(): Promise<BrandProfileInput> {
   };
 }
 
-async function textFor(sourceType: KnowledgeSourceType, sourceId: string): Promise<{ label: string; text: string } | null> {
+interface ParentMeta {
+  organizationId: string;
+  sensitivity: Sensitivity;
+  label: string;
+  text: string;
+}
+
+async function parentFor(sourceType: KnowledgeSourceType, sourceId: string): Promise<ParentMeta | null> {
   switch (sourceType) {
     case 'BRAND': {
-      const b = await brandProfile();
+      const row = await prisma.brandProfile.findUnique({ where: { id: sourceId } });
+      if (!row) return null;
+      const b = await brandProfile(row.organizationId);
       return {
+        organizationId: row.organizationId,
+        sensitivity: 'PUBLIC',
         label: 'Brand profile',
         text: [
           b.companyName && `Company: ${b.companyName}`,
@@ -65,6 +86,8 @@ async function textFor(sourceType: KnowledgeSourceType, sourceId: string): Promi
       const p = await prisma.product.findUnique({ where: { id: sourceId } });
       if (!p || !p.active) return null;
       return {
+        organizationId: p.organizationId,
+        sensitivity: p.sensitivity,
         label: `Product: ${p.name}`,
         text: [
           `Product: ${p.name}${p.sku ? ` (SKU ${p.sku})` : ''}`,
@@ -79,25 +102,49 @@ async function textFor(sourceType: KnowledgeSourceType, sourceId: string): Promi
     case 'ACCOMPLISHMENT': {
       const a = await prisma.accomplishment.findUnique({ where: { id: sourceId } });
       if (!a) return null;
-      return { label: `Accomplishment: ${a.title}`, text: `Accomplishment${a.date ? ` (${a.date.toISOString().slice(0, 10)})` : ''}: ${a.title}\n${a.description}` };
+      return {
+        organizationId: a.organizationId,
+        sensitivity: a.sensitivity,
+        label: `Accomplishment: ${a.title}`,
+        text: `Accomplishment${a.date ? ` (${a.date.toISOString().slice(0, 10)})` : ''}: ${a.title}\n${a.description}`,
+      };
     }
     case 'SOURCE': {
       const s = await prisma.source.findUnique({ where: { id: sourceId } });
       if (!s || !s.content) return null;
-      return { label: s.title || s.url || 'Source', text: `${s.title ? `${s.title}\n` : ''}${s.content}` };
+      return {
+        organizationId: s.organizationId,
+        sensitivity: s.sensitivity,
+        label: s.title || s.url || 'Source',
+        text: `${s.title ? `${s.title}\n` : ''}${s.content}`,
+      };
+    }
+    case 'CLAIM': {
+      const c = await prisma.claim.findUnique({ where: { id: sourceId } });
+      if (!c || c.status !== 'APPROVED') return null;
+      if (c.expiresAt && c.expiresAt.getTime() < Date.now()) return null;
+      return {
+        organizationId: c.organizationId,
+        sensitivity: c.sensitivity,
+        label: 'Approved claim',
+        text: `Approved claim: ${c.text}${c.sourceUrl ? ` Source: ${c.sourceUrl}` : ''}`,
+      };
     }
   }
 }
 
-/** Rebuilds the embedded chunks for one knowledge item. Deleted items just lose their chunks. */
+/** Rebuilds the embedded chunks for one knowledge item. Restricted items are never embedded. Deleted items just lose their chunks. */
 export async function embedKnowledge(sourceType: KnowledgeSourceType, sourceId: string): Promise<number> {
   await prisma.knowledgeChunk.deleteMany({ where: { sourceType, sourceId } });
-  const item = await textFor(sourceType, sourceId);
-  if (!item || !item.text.trim()) return 0;
+  const item = await parentFor(sourceType, sourceId);
+  // RESTRICTED material stays out of the index entirely.
+  if (!item || !item.text.trim() || item.sensitivity === 'RESTRICTED') return 0;
   const chunks = chunkText(item.text).map((c) => `[${item.label}] ${c}`);
   const vectors = await embedTexts(chunks);
   for (let i = 0; i < chunks.length; i++) {
-    const row = await prisma.knowledgeChunk.create({ data: { sourceType, sourceId, text: chunks[i] } });
+    const row = await prisma.knowledgeChunk.create({
+      data: { organizationId: item.organizationId, sourceType, sourceId, text: chunks[i], sensitivity: item.sensitivity },
+    });
     await prisma.$executeRawUnsafe(`UPDATE "KnowledgeChunk" SET embedding = $1::vector WHERE id = $2`, toVector(vectors[i]), row.id);
   }
   return chunks.length;
@@ -112,11 +159,14 @@ export async function storedEmbedDims(): Promise<number[]> {
 }
 
 /** Re-embeds everything, e.g. after switching embedding providers. */
-export async function reindexAllKnowledge(): Promise<void> {
-  await embedKnowledge('BRAND', 'brand');
-  for (const p of await prisma.product.findMany({ select: { id: true } })) await embedKnowledge('PRODUCT', p.id);
-  for (const a of await prisma.accomplishment.findMany({ select: { id: true } })) await embedKnowledge('ACCOMPLISHMENT', a.id);
-  for (const s of await prisma.source.findMany({ where: { status: 'OK' }, select: { id: true } })) await embedKnowledge('SOURCE', s.id);
+export async function reindexAllKnowledge(orgId?: string): Promise<void> {
+  const organizationId = orgId ?? (await getDefaultOrgId());
+  const where = { organizationId };
+  for (const b of await prisma.brandProfile.findMany({ where, select: { id: true } })) await embedKnowledge('BRAND', b.id);
+  for (const p of await prisma.product.findMany({ where, select: { id: true } })) await embedKnowledge('PRODUCT', p.id);
+  for (const a of await prisma.accomplishment.findMany({ where, select: { id: true } })) await embedKnowledge('ACCOMPLISHMENT', a.id);
+  for (const s of await prisma.source.findMany({ where: { ...where, status: 'OK' }, select: { id: true } })) await embedKnowledge('SOURCE', s.id);
+  for (const c of await prisma.claim.findMany({ where: { ...where, status: 'APPROVED' }, select: { id: true } })) await embedKnowledge('CLAIM', c.id);
 }
 
 export interface RetrievedChunk {
@@ -124,20 +174,24 @@ export interface RetrievedChunk {
   sourceType: string;
   sourceId: string;
   text: string;
+  sensitivity: Sensitivity;
   score: number;
 }
 
-/** Top-k knowledge chunks by cosine similarity to the query. */
-export async function retrieve(query: string, k = 8): Promise<RetrievedChunk[]> {
+/** Top-k knowledge chunks for one org. Restricted chunks are never stored, and are excluded here too. */
+export async function retrieve(orgId: string, query: string, k = 8): Promise<RetrievedChunk[]> {
   const [vec] = await embedTexts([query]);
   return prisma.$queryRawUnsafe<RetrievedChunk[]>(
-    `SELECT id, "sourceType", "sourceId", text, 1 - (embedding <=> $1::vector) AS score
+    `SELECT id, "sourceType", "sourceId", text, sensitivity::text AS sensitivity, 1 - (embedding <=> $1::vector) AS score
        FROM "KnowledgeChunk"
       WHERE embedding IS NOT NULL AND vector_dims(embedding) = $2
+        AND "organizationId" = $3
+        AND sensitivity <> 'RESTRICTED'
       ORDER BY embedding <=> $1::vector
-      LIMIT $3`,
+      LIMIT $4`,
     toVector(vec),
     vec.length,
+    orgId,
     k,
   );
 }

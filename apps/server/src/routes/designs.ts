@@ -48,6 +48,7 @@ export async function designRoutes(app: FastifyInstance) {
     let productImageKey: string | undefined;
     if (body.productAssetId) {
       const asset = await prisma.asset.findUniqueOrThrow({ where: { id: body.productAssetId } });
+      if (asset.notForPublicUse) throw badRequest('That library file is not for public use.');
       productImageKey = asset.storedKey ?? asset.thumbnailKey ?? undefined;
     }
     const { doc } = await composeDesign({ ...body, productImageKey });

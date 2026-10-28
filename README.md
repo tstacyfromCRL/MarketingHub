@@ -2,7 +2,7 @@
 
 Mantis is the desktop app Carnegie Robotics marketing uses to keep brand, assets, and publishing in one place. It learns the company's voice from a brand profile and knowledge base, drafts social posts and campaigns, and routes them through creator and manager approval before anything is published. Files in the asset library stay on the shared Marketing & Media drive. Mantis indexes them. It does not move the library onto a cloud drive.
 
-The window title, header, and installer name are **Mantis**. Some internal package names still say `marketing-hub` or `@mh`. Those are code names, not the product name.
+The window title and installer name are **Mantis**. Sign-in, company setup, and Settings → About show the Mantis wordmark. The top bar, window icon, and desktop notifications use the mantis icon. Some internal package names still say `marketing-hub` or `@mh`. Those are code names, not the product name.
 
 ## How it fits together
 
@@ -88,7 +88,7 @@ In Cursor, open **Run and Debug** and start **Mantis (all)**. That starts four t
 3. **Desktop: main process** (Electron).
 4. **Desktop: UI**, attached to the Electron debugger on port 9222.
 
-The API process in that launch configuration does not watch for file changes. After you change server code, stop and start **Mantis (all)** again. The desktop UI reloads on its own.
+The API process in that launch configuration does not watch for file changes. After you change server code, stop and start **Mantis (all)** again. The desktop window reloads on its own, and changes to the desktop main process restart that window.
 
 Only one PGlite process may use `packages/db/.pglite`. Starting a second one aborts both. Stop **Mantis (all)** before starting the database by itself.
 
@@ -122,11 +122,11 @@ If the server is unreachable, those buttons stay disabled. Open Connection setti
 
 ### Screens
 
-After sign-in, the top row is Home, Calendar, Tasks, and Studio. Settings is the gear icon.
+After sign-in, the mantis icon sits at the left of the top bar. The top row is Home, Calendar, Tasks, and Studio. Settings is the gear icon. The icon links back to Home.
 
 - **Home** is the view after sign-in.
 - **Calendar** holds scheduled posts and team events.
-- **Tasks** is a kanban board (Backlog, To Do, In Progress, Review, Done).
+- **Tasks** is a kanban board (Backlog, To Do, In Progress, Review, Done). Each card can move to the next stage, be edited, be archived, or be deleted. Archive keeps the task and takes it off the board; Archived in the filter brings it back. Delete asks first.
 - **Studio** is where content is made. Its row is Content, Campaigns, Approvals, Library, and Brand.
   - **Content** drafts a single post, email, blog, or documentation page from a brief. AI uses the brand profile and retrieved knowledge.
   - **Campaigns** plans a set of posts across a date range and builds the graphics.
@@ -135,7 +135,7 @@ After sign-in, the top row is Home, Calendar, Tasks, and Studio. Settings is the
   - **Brand** holds the brand kit, products, knowledge base, and analytics.
     - **Brand kit** is logos, colors, and fonts.
     - **Products** are the products AI may mention and match in images.
-    - **Knowledge** is the brand profile, accomplishments, and uploaded or scraped sources that AI is allowed to use.
+    - **Knowledge** is the brand profile, playbooks, approved claims, confidential names, products, connectors, documents, and crawled pages. Import / Export loads a knowledge pack. AI warnings on a post are shown, and they do not block the draft.
     - **Analytics** summarizes posts and review time.
 - **Settings** is your account, social connections (managers), the team (admins), the work log, and system status (admins). The work log is every significant action across the team.
 
@@ -157,6 +157,8 @@ Anyone signed in can **Import folders** or **Import files**. Mantis indexes only
 
 Select thumbnails to add tags, assign a product, or move files into a folder. Moving creates the folder on the shared drive and moves the real files. **Remove** drops a file from the Mantis index and leaves it on the drive. The same remove action is on the file details panel.
 
+**Not for public use** grays a file or an imported folder. The files stay in the library. AI does not tag them, match them to products, or place them in a generated graphic. Flag a folder from the folder row or from the file details. **Use in New Design** opens the studio editor with that image on a new graphic. The image is read from the shared drive on this PC.
+
 ### Company setup
 
 Create New Company walks through the company name, a short description, a summary to approve, logos, colors, and voice. Sample posts teach the writing style. You can leave and come back; a banner on the home screen links to the unfinished steps.
@@ -175,6 +177,8 @@ LOCAL_EMBED_DIMS=768
 ```
 
 Qwen2.5 7B Instruct is Apache-2.0 and fits in about 8 GB of video memory at 4-bit. Use `qwen2.5:14b` if the GPU has about 12 GB. After changing the embedding model, open Settings → System and run **Re-index knowledge base**. Until that finishes, search ignores chunks stored at the old size. Settings also shows whether the local model server is reachable.
+
+A knowledge pack is a folder (or a zip of that folder) described in `knowledge-pack.example/README.md`. `SHOPIFY_STORE_DOMAIN` and `SHOPIFY_ADMIN_TOKEN` are optional and apply only when Shopify has not been saved in Knowledge → Integrations. `KNOWLEDGE_WATCH_DIR` is an optional folder of documents to index every 10 minutes. Leave it empty to disable that.
 
 ## Where data lives
 
@@ -197,6 +201,8 @@ Do not commit `.env`, `packages/db/.pglite`, or `.data`.
 | `pnpm db:generate` | Regenerate the Prisma client after a schema change |
 | `pnpm typecheck` | Typecheck every package |
 | `pnpm test` | Unit tests |
+| `pnpm kb:import <dir>` | Import a knowledge pack (`--dry-run`, `--prune`) |
+| `pnpm kb:export <dir>` | Write the current knowledge back out as a pack |
 | `pnpm dist:desktop` | Windows installer |
 
 ## Docker, when you want it

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Bell, LogOut, Search, Settings, Sparkles } from 'lucide-react';
+import { Bell, LogOut, Search, Settings } from 'lucide-react';
+import { BrandMark } from './BrandMark';
 import { useOnboarding } from '../pages/Onboarding';
 import { api, queryClient } from '../lib/api';
 import { isApprovalsPath, isBrandPath, isCampaignsPath, isContentPath, isLibraryPath, isStudioPath } from '../lib/sections';
@@ -25,7 +26,7 @@ function FinishSetupBanner() {
   if (!onboarding.data || onboarding.data.state.completedAt) return null;
   return (
     <div className="mb-6 flex items-center gap-4 rounded-sm bg-chrome px-4 py-3">
-      <Sparkles className="h-5 w-5 shrink-0 text-sage" />
+      <BrandMark variant="icon" className="h-8 w-8 shrink-0" />
       <div className="flex-1">
         <div className="text-sage">Finish setting up your company</div>
         <p className="text-sm text-mist/75">Teach Mantis your company, brand kit and voice so every post sounds like you.</p>
@@ -62,7 +63,9 @@ export function Layout() {
     <div className="flex h-full flex-col bg-ink text-mist">
       <header className="bg-chrome">
         <div className="flex items-center gap-6 px-6 py-4">
-          <div className="text-xl font-light tracking-wide text-sage">Mantis</div>
+          <Link to="/" title="Mantis" className="shrink-0">
+            <BrandMark variant="icon" className="h-9 w-9" />
+          </Link>
           <form
             className="relative ml-auto w-64"
             onSubmit={(e) => {

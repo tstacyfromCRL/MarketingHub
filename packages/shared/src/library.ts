@@ -78,6 +78,20 @@ export function normalizeImportPath(relPath: string): string {
   return relPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
 }
 
+/**
+ * A file people can still browse, but vision, embeddings, product matching, and generated
+ * graphics must ignore. A folder hold covers the folder itself and everything inside it.
+ */
+export function assetHiddenFromAi(relPath: string, holds: { relPath: string; kind: LibraryImportKind }[]): boolean {
+  const rel = normalizeImportPath(relPath);
+  return holds.some((hold) => {
+    const root = normalizeImportPath(hold.relPath);
+    if (hold.kind === 'FILE') return root.toLowerCase() === rel.toLowerCase();
+    if (root === '') return true;
+    return root.toLowerCase() === rel.toLowerCase() || isInsideImport(root, rel);
+  });
+}
+
 /** True when `relPath` is strictly inside a folder import (`folderRel` of "" is the drive root). */
 export function isInsideImport(folderRel: string, relPath: string): boolean {
   const folder = normalizeImportPath(folderRel);

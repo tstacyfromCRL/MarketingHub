@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Check, CheckCircle2, Circle, Globe, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, CheckCircle2, Circle, Globe, Loader2, Plus, Trash2 } from 'lucide-react';
 import {
   ANALYZE_STEPS, PLATFORMS, PLATFORM_PRESETS, type AnalyzeProgress, type AnalyzeStep, type BrandColor, type BrandProfileInput,
   type CompanySummary, type OnboardingState, type OnboardingStep, type SuggestedProduct,
@@ -10,6 +10,7 @@ import { api, errorMessage, queryClient } from '../lib/api';
 import { isAdmin, useSession } from '../lib/session';
 import type { KnowledgeSource } from '../lib/types';
 import { BrandFileUploader, ColorTiersEditor, useBrandFiles } from '../components/BrandKit';
+import { BrandMark } from '../components/BrandMark';
 import { Button, ErrorText, Field, Spinner } from '../components/ui';
 
 const WIZARD_STEPS: OnboardingStep[] = ['name', 'about', 'summary', 'logos', 'colors', 'voice', 'analyze', 'done'];
@@ -44,9 +45,7 @@ async function saveBrand(patch: Partial<BrandProfileInput>) {
 function Say({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600/30 text-indigo-200">
-        <Sparkles className="h-4 w-4" />
-      </div>
+      <BrandMark variant="icon" className="mt-0.5 h-8 w-8 shrink-0" />
       <div className="rounded-2xl rounded-tl-sm bg-slate-800/80 px-4 py-3 text-[15px] leading-relaxed">{children}</div>
     </div>
   );
@@ -107,7 +106,8 @@ export function OnboardingPage() {
   return (
     <Centered>
       <div className="mb-8 flex items-center gap-3">
-        <div className="text-lg font-semibold">Mantis setup</div>
+        <BrandMark className="h-8 w-auto shrink-0" />
+        <div className="text-sm uppercase tracking-wider text-mist/70">Setup</div>
         <div className="flex flex-1 gap-1">
           {WIZARD_STEPS.slice(0, -1).map((s, i) => (
             <div key={s} className={`h-1.5 flex-1 rounded-full ${i < index ? 'bg-indigo-500' : i === index ? 'bg-indigo-400/60' : 'bg-slate-800'}`} />

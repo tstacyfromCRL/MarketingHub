@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
-import { Check, CheckSquare, ExternalLink, FilePlus, FileText, FolderPlus, FolderSearch, Film, ImageIcon, RefreshCw, Tag, Trash2, Upload, X } from 'lucide-react';
+import { assetHiddenFromAi } from '@mh/shared';
+import { Check, CheckSquare, ExternalLink, EyeOff, FilePlus, FileText, FolderPlus, FolderSearch, Film, ImageIcon, ImagePlus, RefreshCw, Tag, Trash2, Upload, X } from 'lucide-react';
 import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { useProducts } from '../lib/hooks';
@@ -19,6 +20,12 @@ interface Stats {
 
 const KIND_ICON = { IMAGE: ImageIcon, VIDEO: Film, DOCUMENT: FileText, OTHER: FileText };
 
+interface LibraryPath {
+  id: string;
+  relPath: string;
+  kind: 'FOLDER' | 'FILE';
+}
+
 export function LibraryPage() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
@@ -33,6 +40,8 @@ export function LibraryPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const products = useProducts();
+  const imports = useQuery({ queryKey: ['library-imports'], queryFn: () => api.get<LibraryPath[]>('/library/imports') });
+  const holds = useQuery({ queryKey: ['library-holds'], queryFn: () => api.get<LibraryPath[]>('/library/holds') });
   const selected = params.get('asset');
 
   const qs = new URLSearchParams({ page: String(page) });
@@ -120,6 +129,7 @@ export function LibraryPage() {
             <FilePlus className="h-3.5 w-3.5" /> Import files
           </Button>
         </div>
+        <FolderFlags imports={imports.data ?? []} holds={holds.data ?? []} />
         {scanning && <p className="mb-3 text-xs text-slate-400">Indexing imported files...</p>}
         {notice && <p className="mb-3 text-sm text-amber-200">{notice}</p>}
         <ErrorText error={importError} />
@@ -140,7 +150,7 @@ export function LibraryPage() {
                 const Icon = KIND_ICON[a.kind];
                 const isPicked = picked.includes(a.id);
                 return (
-                  <div key={a.id} className={`group relative overflow-hidden rounded-lg border text-left ${selected === a.id || isPicked ? 'border-indigo-500' : 'border-slate-800 hover:border-slate-600'}`}>
+                  <div key={a.id} className={`group relative overflow-hidden rounded-lg border text-left ${a.notForPublicUse ? 'opacity-60' : ''} ${selected === a.id || isPicked ? 'border-indigo-500' : 'border-slate-800 hover:border-slate-600'}`}>
                     <button
                       type="button"
                       title={isPicked ? 'Deselect' : 'Select'}
@@ -150,8 +160,9 @@ export function LibraryPage() {
                       <CheckSquare className="h-3.5 w-3.5" />
                     </button>
                     <button type="button" onClick={() => setParams({ asset: a.id })} className="block w-full text-left">
-                    <div className="flex aspect-square items-center justify-center bg-slate-900">
+                    <div className={`relative flex aspect-square items-center justify-center bg-slate-900 ${a.notForPublicUse ? 'grayscale' : ''}`}>
                       {a.thumbnailKey ? <img src={fileUrl(a.thumbnailKey)} className="h-full w-full object-cover" loading="lazy" /> : <Icon className="h-10 w-10 text-slate-600" />}
+                      {a.notForPublicUse && <span className="absolute bottom-1.5 left-1.5 right-1.5 truncate rounded bg-slate-950/85 px-1 py-0.5 text-center text-[10px] text-slate-300">Not for public use</span>}
                     </div>
                     <div className="p-2">
                       <div className="truncate text-xs" title={a.relPath}>{a.relPath.split('/').pop()}</div>
@@ -183,7 +194,7 @@ export function LibraryPage() {
           </>
         )}
       </div>
-      {selected && <AssetDrawer id={selected} onClose={() => setParams({})} />}
+      {selected && <AssetDrawer id={selected} holds={holds.data ?? []} onClose={() => setParams({})} />}
     </div>
   );
 }
@@ -191,11 +202,56 @@ export function LibraryPage() {
 function refreshLibrary() {
   void queryClient.invalidateQueries({ queryKey: ['assets'] });
   void queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+  void queryClient.invalidateQueries({ queryKey: ['library-holds'] });
+}
+
+/** Imported folders, so a whole folder can be kept out of AI without flagging each file. */
+function FolderFlags({ imports, holds }: { imports: LibraryPath[]; holds: LibraryPath[] }) {
+  const folders = [
+    ...imports.filter((row) => row.kind === 'FOLDER'),
+    ...holds.filter((row) => row.kind === 'FOLDER' && !imports.some((item) => item.kind === 'FOLDER' && item.relPath.toLowerCase() === row.relPath.toLowerCase())),
+  ];
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!folders.length) return null;
+  const toggle = async (relPath: string, hidden: boolean) => {
+    setBusy(relPath);
+    try {
+      await api.post('/library/holds', { relPath, kind: 'FOLDER', hidden });
+      refreshLibrary();
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <span className="text-xs text-slate-500">Folders</span>
+      {folders.map((folder) => {
+        const covered = holds.some((hold) => hold.kind === 'FOLDER' && hold.relPath.toLowerCase() === folder.relPath.toLowerCase());
+        const hidden = covered || holds.some((hold) => hold.kind === 'FOLDER' && assetHiddenFromAi(`${folder.relPath}/file`, [hold]));
+        return (
+          <button
+            key={folder.id}
+            type="button"
+            disabled={busy === folder.relPath}
+            title={covered ? 'Allow AI to use files in this folder' : 'Keep this folder out of AI'}
+            onClick={() => void toggle(folder.relPath, !covered)}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs ${covered || hidden ? 'border-slate-600 bg-slate-800/80 text-slate-400' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
+          >
+            {(covered || hidden) && <EyeOff className="h-3 w-3" />}
+            {folder.relPath || 'Whole drive'}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Actions for the files checked in the thumbnail grid. */
 function BatchBar({ ids, items, products, onDone }: { ids: string[]; items: Asset[]; products: { id: string; name: string }[]; onDone: () => void }) {
+  const navigate = useNavigate();
   const selected = items.filter((item) => ids.includes(item.id));
+  const allHidden = selected.length > 0 && selected.every((item) => item.notForPublicUse);
+  const oneImage = selected.length === 1 && selected[0].kind === 'IMAGE' ? selected[0] : null;
   const [mode, setMode] = useState<'tags' | 'product' | 'folder' | null>(null);
   const [tags, setTags] = useState('');
   const [productId, setProductId] = useState('');
@@ -224,6 +280,17 @@ function BatchBar({ ids, items, products, onDone }: { ids: string[]; items: Asse
         <Button size="sm" variant="secondary" onClick={() => setMode(mode === 'tags' ? null : 'tags')}><Tag className="h-3.5 w-3.5" /> Add tags</Button>
         <Button size="sm" variant="secondary" onClick={() => setMode(mode === 'product' ? null : 'product')}>Tag product</Button>
         <Button size="sm" variant="secondary" onClick={() => setMode(mode === 'folder' ? null : 'folder')}><FolderPlus className="h-3.5 w-3.5" /> Move to folder</Button>
+        <Button size="sm" variant="secondary" loading={busy && mode === null} onClick={() => void run(() => api.post('/library/assets/batch-edit', { ids: selected.map((item) => item.id), notForPublicUse: !allHidden }))}>
+          <EyeOff className="h-3.5 w-3.5" /> {allHidden ? 'Allow AI' : 'Not for public use'}
+        </Button>
+        {oneImage && (
+          <Button
+            size="sm"
+            onClick={() => navigate(`/designs/new?w=1080&h=1080&name=${encodeURIComponent(oneImage.relPath.split('/').pop() ?? 'Graphic')}&asset=${oneImage.id}`)}
+          >
+            <ImagePlus className="h-3.5 w-3.5" /> Use in New Design
+          </Button>
+        )}
         <Button
           size="sm"
           variant="danger"
@@ -276,7 +343,46 @@ function BatchBar({ ids, items, products, onDone }: { ids: string[]; items: Asse
   );
 }
 
-function AssetDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+/** The file's own flag, plus the folder flag when a parent folder is what keeps AI away. */
+function PublicUseFlag({ asset, holds, busy, onFlag, onRefresh }: {
+  asset: Asset;
+  holds: LibraryPath[];
+  busy: boolean;
+  onFlag: (hidden: boolean) => void;
+  onRefresh: () => void;
+}) {
+  const folder = asset.relPath.includes('/') ? asset.relPath.slice(0, asset.relPath.lastIndexOf('/')) : null;
+  const folderHold = holds.find((hold) => hold.kind === 'FOLDER' && assetHiddenFromAi(asset.relPath, [hold]));
+  const own = holds.some((hold) => hold.kind === 'FILE' && hold.relPath.toLowerCase() === asset.relPath.toLowerCase());
+  const [folderBusy, setFolderBusy] = useState(false);
+  const toggleFolder = async (hidden: boolean) => {
+    if (!folder) return;
+    setFolderBusy(true);
+    try {
+      await api.post('/library/holds', { relPath: folderHold?.relPath ?? folder, kind: 'FOLDER', hidden });
+      onRefresh();
+    } finally {
+      setFolderBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-slate-800 px-3 py-2">
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={own || Boolean(folderHold)} disabled={busy || Boolean(folderHold)} onChange={(e) => onFlag(e.target.checked)} />
+        Not for public use
+      </label>
+      <p className="text-[11px] text-slate-500">The file stays in the library. AI will not tag it, match it to a product, or place it in a generated graphic.</p>
+      {folder && (
+        <Button size="sm" variant="secondary" loading={folderBusy} onClick={() => void toggleFolder(!folderHold)}>
+          <EyeOff className="h-3.5 w-3.5" /> {folderHold ? `Allow AI in ${folderHold.relPath}` : `Flag folder ${folder}`}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function AssetDrawer({ id, holds, onClose }: { id: string; holds: LibraryPath[]; onClose: () => void }) {
+  const navigate = useNavigate();
   const { data: asset } = useQuery({ queryKey: ['assets', 'one', id], queryFn: () => api.get<Asset>(`/library/assets/${id}`) });
   const products = useProducts();
   const [tags, setTags] = useState<string[]>([]);
@@ -291,16 +397,18 @@ function AssetDrawer({ id, onClose }: { id: string; onClose: () => void }) {
     }
   }, [asset]);
 
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['assets'] });
-    void queryClient.invalidateQueries({ queryKey: ['library-stats'] });
-  };
+  const refresh = () => refreshLibrary();
   const save = useMutation({ mutationFn: () => api.patch(`/library/assets/${id}`, { tags, description }), onSuccess: refresh });
   const confirmProduct = useMutation({
     mutationFn: (v: { productId: string; confirmed: boolean }) => api.put(`/library/assets/${id}/products`, v),
     onSuccess: refresh,
   });
-  const retag = useMutation({ mutationFn: () => api.post(`/library/assets/${id}/retag`), onSuccess: refresh });
+  const retag = useMutation({ mutationFn: () => api.post(`/library/assets/${id}/retag`), onSuccess: refresh, onError: (e) => setError(errorMessage(e)) });
+  const flag = useMutation({
+    mutationFn: (hidden: boolean) => api.post('/library/assets/batch-edit', { ids: [id], notForPublicUse: hidden }),
+    onSuccess: refresh,
+    onError: (e) => setError(errorMessage(e)),
+  });
   const remove = useMutation({
     mutationFn: () => api.post('/library/assets/batch-edit', { ids: [id], remove: true }),
     onSuccess: () => {
@@ -333,7 +441,7 @@ function AssetDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         <Spinner />
       ) : (
         <div className="space-y-4 p-4">
-          {asset.thumbnailKey && <img src={fileUrl(asset.storedKey ?? asset.thumbnailKey)} className="w-full rounded-md bg-slate-900 object-contain" />}
+          {asset.thumbnailKey && <img src={fileUrl(asset.storedKey ?? asset.thumbnailKey)} className={`w-full rounded-md bg-slate-900 object-contain ${asset.notForPublicUse ? 'opacity-60 grayscale' : ''}`} />}
           <div>
             <div className="break-all font-mono text-xs text-slate-300">{asset.relPath}</div>
             <div className="mt-1 text-xs text-slate-500">{(asset.size / 1024 / 1024).toFixed(2)} MB · modified {formatDate(asset.mtime)}</div>
@@ -341,6 +449,14 @@ function AssetDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" onClick={() => void local(() => window.api.library.open(asset.relPath))}><ExternalLink className="h-3.5 w-3.5" /> Open</Button>
             <Button size="sm" variant="secondary" onClick={() => void local(() => window.api.library.reveal(asset.relPath))}><FolderSearch className="h-3.5 w-3.5" /> Show in folder</Button>
+            {asset.kind === 'IMAGE' && (
+              <Button
+                size="sm"
+                onClick={() => navigate(`/designs/new?w=1080&h=1080&name=${encodeURIComponent(asset.relPath.split('/').pop() ?? 'Graphic')}&asset=${asset.id}`)}
+              >
+                <ImagePlus className="h-3.5 w-3.5" /> Use in New Design
+              </Button>
+            )}
             {asset.kind === 'IMAGE' && !asset.storedKey && (
               <Button size="sm" variant="secondary" onClick={() => upload.mutate()} loading={upload.isPending} title="Uploads the full-resolution file so it can be used in designs and posts">
                 <Upload className="h-3.5 w-3.5" /> Use in content
@@ -349,6 +465,7 @@ function AssetDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             {asset.storedKey && <Badge color="#22c55e">Available for designs</Badge>}
           </div>
           <ErrorText error={error} />
+          <PublicUseFlag asset={asset} holds={holds} busy={flag.isPending} onFlag={(hidden) => flag.mutate(hidden)} onRefresh={refresh} />
 
           <div>
             <div className="label">Products in this image</div>
@@ -376,7 +493,7 @@ function AssetDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           <Field label="Description"><textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
           <Field label="Tags"><ChipInput value={tags} onChange={setTags} /></Field>
           <div className="flex justify-between">
-            <Button size="sm" variant="ghost" onClick={() => retag.mutate()} loading={retag.isPending}><RefreshCw className="h-3.5 w-3.5" /> Re-run AI tagging</Button>
+            <Button size="sm" variant="ghost" onClick={() => retag.mutate()} loading={retag.isPending} disabled={asset.notForPublicUse} title={asset.notForPublicUse ? 'AI does not read files that are not for public use' : undefined}><RefreshCw className="h-3.5 w-3.5" /> Re-run AI tagging</Button>
             <Button size="sm" onClick={() => save.mutate()} loading={save.isPending}>Save</Button>
           </div>
           <Button

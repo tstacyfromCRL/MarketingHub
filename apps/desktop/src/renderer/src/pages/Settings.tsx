@@ -7,6 +7,7 @@ import { api, download, errorMessage, queryClient } from '../lib/api';
 import { isAdmin, isManager, useSession, type User } from '../lib/session';
 import { formatDate, formatWhen } from '../lib/format';
 import { useUsers, type TeamUser } from '../lib/hooks';
+import { BrandMark } from '../components/BrandMark';
 import { Badge, Button, Card, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui';
 import { LibraryLocation } from '../components/LibraryLocation';
 import { WorkLogPage } from './WorkLog';
@@ -84,7 +85,10 @@ function General() {
         </div>
       </Card>
       <Card title="About">
-        <div className="text-sm text-slate-400">Mantis {version.data ?? ''} · connected to <span className="font-mono">{serverUrl}</span> as {user!.name} ({user!.role.toLowerCase()})</div>
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <BrandMark className="h-5 w-auto" />
+          <span>{version.data ?? ''} · connected to <span className="font-mono">{serverUrl}</span> as {user!.name} ({user!.role.toLowerCase()})</span>
+        </div>
       </Card>
     </div>
   );

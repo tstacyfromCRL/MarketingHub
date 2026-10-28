@@ -1,0 +1,11 @@
+[
+  {
+    "key": "rows-a-day",
+    "text": "In a 2025 demo, Row Scout covered 40 rows in one afternoon.",
+    "sourceUrl": "https://example.com/acme-field-robotics/notes",
+    "asOf": "2025-09-01",
+    "expiresAt": "2027-09-01",
+    "productKeys": ["row-scout"],
+    "sensitivity": "PUBLIC"
+  }
+]

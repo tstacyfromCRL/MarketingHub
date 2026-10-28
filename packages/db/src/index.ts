@@ -42,5 +42,11 @@ export async function ensureDefaults(db: PrismaClient = prisma): Promise<void> {
   if ((await db.taskCategory.count()) === 0) {
     await db.taskCategory.createMany({ data: DEFAULT_CATEGORIES });
   }
-  await db.brandProfile.upsert({ where: { id: 'brand' }, update: {}, create: { id: 'brand', dos: [], donts: [] } });
+  let org = await db.organization.findUnique({ where: { slug: 'default' } });
+  if (!org) {
+    const named = await db.brandProfile.findFirst({ where: { companyName: { not: '' } } });
+    org = await db.organization.create({ data: { name: named?.companyName || 'Default', slug: 'default' } });
+  }
+  const brand = await db.brandProfile.findUnique({ where: { organizationId: org.id } });
+  if (!brand) await db.brandProfile.create({ data: { organizationId: org.id, dos: [], donts: [] } });
 }

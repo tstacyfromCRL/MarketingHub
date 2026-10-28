@@ -1,0 +1,13 @@
+[
+  {
+    "key": "row-scout",
+    "name": "Row Scout",
+    "sku": "ACME-ROW-1",
+    "description": "A fictional wheeled robot that photographs crop rows.",
+    "features": ["row camera", "daylight navigation"],
+    "pricing": "Ask for a quote",
+    "url": "https://example.com/acme-field-robotics/row-scout",
+    "links": ["https://example.com/acme-field-robotics/row-scout"],
+    "sensitivity": "PUBLIC"
+  }
+]

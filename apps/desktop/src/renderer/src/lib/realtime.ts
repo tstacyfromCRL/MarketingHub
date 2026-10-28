@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import iconUrl from '../assets/mantis-icon.png';
 import { queryClient } from './api';
 import { useSession } from './session';
 
@@ -33,7 +34,8 @@ export function useRealtime() {
         const msg = JSON.parse(ev.data) as { type: string; payload: { title?: string; body?: string; link?: string } };
         for (const key of INVALIDATE[msg.type] ?? []) void queryClient.invalidateQueries({ queryKey: key });
         if (msg.type === 'notification' && msg.payload.title) {
-          const n = new Notification(msg.payload.title, { body: msg.payload.body ?? '' });
+          // Toasts carry the mantis mark so they are recognizable beside other apps.
+          const n = new Notification(msg.payload.title, { body: msg.payload.body ?? '', icon: new URL(iconUrl, window.location.href).href });
           n.onclick = () => {
             if (msg.payload.link) navigate(msg.payload.link);
           };

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { availableActions, transitionPost } from './postWorkflow';
 import { planCampaignSlots } from './campaign';
-import { collapseLibraryImports, resolveLibraryPath, toRelPath, toUncPath } from './library';
+import { assetHiddenFromAi, collapseLibraryImports, resolveLibraryPath, toRelPath, toUncPath } from './library';
 import { brandColorsSchema, paletteInOrder, toHex } from './colors';
+import { taskSchema, taskUpdateSchema } from './api';
 
 describe('brand colors', () => {
   it('converts hex, RGB and CMYK to screen hex', () => {
@@ -29,6 +30,13 @@ describe('brand colors', () => {
     expect(brandColorsSchema.safeParse(many).success).toBe(false);
     expect(brandColorsSchema.safeParse(many.slice(1)).success).toBe(true);
     expect(paletteInOrder(brandColorsSchema.parse([{ hex: '#333333', tier: 'TERTIARY' }, { hex: '#111111', tier: 'PRIMARY' }]))).toEqual(['#111111', '#333333']);
+  });
+});
+
+describe('tasks', () => {
+  it('archives through an update and does not require that flag on a new task', () => {
+    expect(taskSchema.parse({ title: 'Write the booth post', stageId: 'stage' })).not.toHaveProperty('active');
+    expect(taskUpdateSchema.parse({ active: false }).active).toBe(false);
   });
 });
 
@@ -99,6 +107,26 @@ describe('library import collapsing', () => {
   it('treats the drive root as covering everything, and prefers a folder over a file at the same path', () => {
     expect(collapseLibraryImports([file('Brand'), folder(''), file('Brand/logo.png')])).toEqual([folder('')]);
     expect(collapseLibraryImports([file('Brand/logo.png'), folder('Brand/logo.png')])).toEqual([folder('Brand/logo.png')]);
+  });
+});
+
+describe('files kept out of AI', () => {
+  const folder = (relPath: string) => ({ relPath, kind: 'FOLDER' as const });
+  const file = (relPath: string) => ({ relPath, kind: 'FILE' as const });
+
+  it('hides a flagged file, a flagged folder, and everything inside that folder', () => {
+    const holds = [file('Brand/logo.png'), folder('Internal')];
+    expect(assetHiddenFromAi('Brand/logo.png', holds)).toBe(true);
+    expect(assetHiddenFromAi('brand/LOGO.PNG', holds)).toBe(true);
+    expect(assetHiddenFromAi('Internal/shot.jpg', holds)).toBe(true);
+    expect(assetHiddenFromAi('Internal/nested/shot.jpg', holds)).toBe(true);
+    expect(assetHiddenFromAi('Internal', holds)).toBe(true);
+    expect(assetHiddenFromAi('InternalOther/shot.jpg', holds)).toBe(false);
+    expect(assetHiddenFromAi('Brand/other.png', holds)).toBe(false);
+  });
+
+  it('treats a hold on the drive root as covering every file', () => {
+    expect(assetHiddenFromAi('Anything/a.jpg', [folder('')])).toBe(true);
   });
 });
 

@@ -55,7 +55,7 @@ export function PlatformPicker({ value, onChange }: { value: Platform[]; onChang
 export function ProductImagePicker({ productId, value, onChange }: { productId: string; value: string; onChange: (id: string) => void }) {
   const { data } = useQuery({
     queryKey: ['assets', 'product-pick', productId],
-    queryFn: () => api.get<{ items: Asset[] }>(`/library/assets?kind=IMAGE&productId=${productId}`),
+    queryFn: () => api.get<{ items: Asset[] }>(`/library/assets?kind=IMAGE&forAi=1&productId=${productId}`),
     enabled: !!productId,
   });
   if (!productId) return null;
@@ -77,6 +77,7 @@ function NewPost() {
   const [title, setTitle] = useState('');
   const [brief, setBrief] = useState('');
   const [body, setBody] = useState('');
+  const [warnings, setWarnings] = useState<{ code: string; message: string }[]>([]);
   const [productIds, setProductIds] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>(['facebook', 'instagram', 'linkedin']);
   const [perPlatformFiles, setPerPlatformFiles] = useState(true);
@@ -89,9 +90,10 @@ function NewPost() {
   const [scheduledAt, setScheduledAt] = useState('');
 
   const write = useMutation({
-    mutationFn: () => api.post<{ text: string }>('/generate/text', { type: 'SOCIAL_POST', brief, productIds, platform: platforms[0] }),
+    mutationFn: () => api.post<{ text: string; warnings: { code: string; message: string }[] }>('/generate/text', { type: 'SOCIAL_POST', brief, productIds, platform: platforms[0] }),
     onSuccess: (r) => {
       setBody(r.text);
+      setWarnings(r.warnings ?? []);
       if (!title) setTitle(brief.slice(0, 60));
       if (!headline) setHeadline(brief.split(/[.!?\n]/)[0].slice(0, 60));
     },
@@ -99,7 +101,7 @@ function NewPost() {
   const create = useMutation({
     mutationFn: () =>
       api.post<Post>('/posts', {
-        title, body, platforms, perPlatformFiles, adaptCopy,
+        title, body, aiWarnings: warnings, platforms, perPlatformFiles, adaptCopy,
         scheduledAt: fromLocalInput(scheduledAt),
         graphic: withGraphic && headline ? { headline, subline, imagePrompt: imagePrompt || undefined, productAssetId: assetId || undefined } : undefined,
       }),
@@ -131,6 +133,11 @@ function NewPost() {
             <ErrorText error={write.error ? errorMessage(write.error) : null} />
             <Field label="Title (internal)"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
             <Field label="Post copy" hint={`${body.length} characters`}><textarea className="input" rows={7} value={body} onChange={(e) => setBody(e.target.value)} /></Field>
+            {warnings.length > 0 && (
+              <ul className="space-y-1 rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2">
+                {warnings.map((warning, index) => <li key={index} className="text-xs text-amber-100">{warning.message}</li>)}
+              </ul>
+            )}
           </div>
         </Card>
         <Card title="2. Graphic">

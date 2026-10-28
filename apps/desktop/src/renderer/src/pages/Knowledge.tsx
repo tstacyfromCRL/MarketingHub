@@ -8,19 +8,27 @@ import { formatDate } from '../lib/format';
 import { isManager, useSession } from '../lib/session';
 import type { KnowledgeSource } from '../lib/types';
 import { Badge, Button, Card, ChipInput, Empty, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui';
+import { ClaimsTab, ConfidentialTab, DocumentsTab, IntegrationsTab, KnowledgeProductsTab, PackTab, PlaybooksTab } from './KnowledgeSystem';
 
 const TABS = [
-  { to: 'profile', label: 'Company profile' },
-  { to: 'sources', label: 'Links, text & sample posts' },
+  { to: 'profile', label: 'Brand' },
+  { to: 'playbooks', label: 'Playbooks' },
+  { to: 'claims', label: 'Claims' },
+  { to: 'confidential', label: 'Confidential' },
+  { to: 'catalog', label: 'Products' },
+  { to: 'integrations', label: 'Integrations' },
+  { to: 'documents', label: 'Documents' },
+  { to: 'sources', label: 'Links & examples' },
   { to: 'accomplishments', label: 'Accomplishments' },
-  { to: 'search', label: 'What does the AI know?' },
+  { to: 'pack', label: 'Import / Export' },
+  { to: 'search', label: 'What the AI knows' },
 ];
 
 export function KnowledgePage() {
   return (
     <div>
       <PageHeader title="Knowledge base" subtitle="Everything the AI knows about the company. Edits are used in all new content." />
-      <div className="mb-6 flex gap-1 border-b border-slate-800">
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-slate-800">
         {TABS.map((t) => (
           <NavLink key={t.to} to={`/knowledge/${t.to}`} className={({ isActive }) => `-mb-px border-b-2 px-3 py-2 text-sm ${isActive ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
             {t.label}
@@ -35,6 +43,13 @@ export function KnowledgePage() {
         <Route path="products/:id" element={<ProductRedirect />} />
         <Route path="accomplishments" element={<AccomplishmentsTab />} />
         <Route path="sources" element={<SourcesTab />} />
+        <Route path="playbooks" element={<PlaybooksTab />} />
+        <Route path="claims" element={<ClaimsTab />} />
+        <Route path="confidential" element={<ConfidentialTab />} />
+        <Route path="catalog" element={<KnowledgeProductsTab />} />
+        <Route path="integrations" element={<IntegrationsTab />} />
+        <Route path="documents" element={<DocumentsTab />} />
+        <Route path="pack" element={<PackTab />} />
         <Route path="search" element={<RetrievalTab />} />
       </Routes>
     </div>
@@ -207,7 +222,7 @@ function AccomplishmentModal({ item, onClose }: { item?: Accomplishment; onClose
 // Sources
 // ---------------------------------------------------------------------------
 
-const KIND_LABELS: Record<SourceKind, string> = { WEBSITE: 'Website', ARTICLE: 'Article', LINKEDIN: 'LinkedIn', MANUAL: 'Text', SAMPLE_POST: 'Sample post' };
+const KIND_LABELS: Record<SourceKind, string> = { WEBSITE: 'Website', ARTICLE: 'Article', LINKEDIN: 'LinkedIn', MANUAL: 'Text', SAMPLE_POST: 'Sample post', DOCUMENT: 'Document' };
 const KIND_FILTERS: { id: 'ALL' | 'WEB' | 'MANUAL' | 'SAMPLE_POST'; label: string; kinds: SourceKind[] }[] = [
   { id: 'ALL', label: 'All', kinds: ['WEBSITE', 'ARTICLE', 'LINKEDIN', 'MANUAL', 'SAMPLE_POST'] },
   { id: 'WEB', label: 'Websites & articles', kinds: ['WEBSITE', 'ARTICLE', 'LINKEDIN'] },

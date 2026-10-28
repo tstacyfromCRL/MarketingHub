@@ -45,8 +45,12 @@
     "productName": "Mantis",
     "directories": { "output": "release" },
     "files": ["out/**/*"],
+    "extraResources": [
+      { "from": "resources/icon.ico", "to": "icon.ico" },
+      { "from": "resources/icon.png", "to": "icon.png" }
+    ],
     "protocols": [{ "name": "Mantis", "schemes": ["marketinghub"] }],
-    "win": { "target": ["nsis"] },
+    "win": { "icon": "resources/icon.ico", "target": ["nsis"] },
     "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true },
     "publish": [{ "provider": "generic", "url": "https://updates.example.com/marketing-hub/" }]
   }

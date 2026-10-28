@@ -84,7 +84,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const like = { contains: q, mode: 'insensitive' as const };
     const [posts, tasks, products, assets, content, sources, campaigns] = await Promise.all([
       prisma.post.findMany({ where: { OR: [{ title: like }, { body: like }] }, select: { id: true, title: true, status: true, scheduledAt: true }, take: 10 }),
-      prisma.task.findMany({ where: { OR: [{ title: like }, { description: like }] }, select: { id: true, title: true, stage: { select: { name: true } } }, take: 10 }),
+      prisma.task.findMany({ where: { active: true, OR: [{ title: like }, { description: like }] }, select: { id: true, title: true, stage: { select: { name: true } } }, take: 10 }),
       prisma.product.findMany({ where: { OR: [{ name: like }, { sku: like }, { description: like }] }, select: { id: true, name: true, sku: true }, take: 10 }),
       prisma.asset.findMany({ where: { missing: false, OR: [{ relPath: like }, { description: like }, { tags: { has: q.toLowerCase() } }] }, select: { id: true, relPath: true, thumbnailKey: true }, take: 12 }),
       prisma.contentDoc.findMany({ where: { OR: [{ title: like }, { body: like }] }, select: { id: true, title: true, type: true }, take: 10 }),

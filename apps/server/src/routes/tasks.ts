@@ -123,6 +123,7 @@ export async function taskRoutes(app: FastifyInstance) {
         stageId: body.stageId,
         assigneeId: body.assigneeId,
         dueDate: body.dueDate === undefined ? undefined : body.dueDate ? new Date(body.dueDate) : null,
+        active: body.active,
         categories: body.categoryIds ? { set: body.categoryIds.map((id) => ({ id })) } : undefined,
       },
       include: { ...taskInclude, stage: true },
@@ -130,6 +131,8 @@ export async function taskRoutes(app: FastifyInstance) {
     const changes: string[] = [];
     if (body.assigneeId !== undefined && body.assigneeId !== before.assigneeId) changes.push(task.assignee ? `assigned to ${task.assignee.name}` : 'unassigned');
     if (body.stageId && body.stageId !== before.stageId) changes.push(`moved to ${task.stage.name}`);
+    if (body.active === false) changes.push('archived');
+    if (body.active === true) changes.push('restored');
     await recordEvent({ actorId: req.user.id, verb: 'update', entityType: 'task', entityId: task.id, link: `/tasks/${task.id}`, summary: `Task "${task.title}" updated by ${req.user.name}${changes.length ? ` (${changes.join(', ')})` : ''}` });
     if (body.assigneeId && body.assigneeId !== before.assigneeId) {
       await notify([body.assigneeId], { title: 'Task assigned to you', body: `${req.user.name} assigned you "${task.title}".`, link: `/tasks/${task.id}` }, req.user.id);

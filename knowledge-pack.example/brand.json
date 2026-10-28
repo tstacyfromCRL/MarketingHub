@@ -1,0 +1,14 @@
+{
+  "companyName": "Acme Field Robotics",
+  "summary": "Acme Field Robotics builds small fictional machines that help farmers check their rows. This pack is sample data for Mantis, not a real company.",
+  "tagline": "See every row.",
+  "mission": "Give farmers a clear picture of the field without the jargon.",
+  "audience": "Farm managers who want a simple weekly update.",
+  "voice": "Plain, specific, and calm. Short sentences. No hype.",
+  "visualIdentity": "Sage green, open sky, and machines in real fields. No dark sci-fi.",
+  "dos": ["Name the crop or the job", "End with one next step"],
+  "donts": ["game-changing", "revolutionary"],
+  "colors": [{ "name": "Field", "hex": "#6A8B5E", "tier": "PRIMARY", "format": "HEX", "value": "#6A8B5E" }],
+  "fonts": [{ "role": "body", "family": "Arial" }],
+  "website": "https://example.com/acme-field-robotics"
+}

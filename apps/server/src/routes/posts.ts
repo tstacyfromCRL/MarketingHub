@@ -16,6 +16,7 @@ import {
 import {
   adaptCopyForPlatforms,
   applyPostAction,
+  getDefaultOrgId,
   composeDesign,
   recordEvent,
   saveDesign,
@@ -56,6 +57,7 @@ async function buildGraphics(user: AuthUser, title: string, platforms: Platform[
   let productImageKey: string | undefined;
   if (g.productAssetId) {
     const asset = await prisma.asset.findUniqueOrThrow({ where: { id: g.productAssetId } });
+    if (asset.notForPublicUse) throw badRequest('That library file is not for public use.');
     productImageKey = asset.storedKey ?? asset.thumbnailKey ?? undefined;
   }
   const map = new Map<Platform, string>();
@@ -112,7 +114,8 @@ export async function postRoutes(app: FastifyInstance) {
     auth.post('/posts', async (req) => {
       const body = createSchema.parse(req.body);
       const platforms = body.platforms as Platform[];
-      const copy = body.adaptCopy ? await adaptCopyForPlatforms(body.body, platforms) : Object.fromEntries(platforms.map((p) => [p, body.body]));
+      const adapted = body.adaptCopy ? await adaptCopyForPlatforms(await getDefaultOrgId(), body.body, platforms) : { variants: Object.fromEntries(platforms.map((p) => [p, body.body])), warnings: {} as Record<string, { code: string; message: string }[]> };
+      const copy = adapted.variants;
       const designs = body.graphic ? await buildGraphics(req.user, body.title, platforms, body.perPlatformFiles, body.graphic) : new Map<Platform, string>();
       const shared = designs.get(platforms[0]) ?? body.designId ?? null;
       const post = await prisma.post.create({
@@ -124,7 +127,8 @@ export async function postRoutes(app: FastifyInstance) {
           scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
           designId: shared,
           creatorId: req.user.id,
-          variants: { create: platforms.map((p) => ({ platform: p, body: copy[p], designId: designs.get(p) ?? shared })) },
+          aiWarnings: (body.aiWarnings ?? []) as Prisma.InputJsonValue,
+          variants: { create: platforms.map((p) => ({ platform: p, body: copy[p], aiWarnings: (adapted.warnings[p] ?? []) as Prisma.InputJsonValue, designId: designs.get(p) ?? shared })) },
         },
         include: postInclude,
       });
@@ -180,9 +184,9 @@ export async function postRoutes(app: FastifyInstance) {
     auth.post<{ Params: { id: string } }>('/posts/:id/adapt', async (req) => {
       const post = await prisma.post.findUniqueOrThrow({ where: { id: req.params.id } });
       if (!isEditable(post.status as PostStatus, ctxFor(req.user, post))) throw forbidden('This post can no longer be edited');
-      const copy = await adaptCopyForPlatforms(post.body, post.platforms as Platform[]);
-      for (const [platform, body] of Object.entries(copy)) {
-        await prisma.postVariant.update({ where: { postId_platform: { postId: post.id, platform } }, data: { body } });
+      const copy = await adaptCopyForPlatforms(await getDefaultOrgId(), post.body, post.platforms as Platform[]);
+      for (const [platform, body] of Object.entries(copy.variants)) {
+        await prisma.postVariant.update({ where: { postId_platform: { postId: post.id, platform } }, data: { body, aiWarnings: (copy.warnings[platform] ?? []) as unknown as Prisma.InputJsonValue } });
       }
       return prisma.post.findUniqueOrThrow({ where: { id: post.id }, include: postInclude });
     });

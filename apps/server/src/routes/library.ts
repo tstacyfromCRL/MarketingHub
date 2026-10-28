@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '@mh/db';
-import { recordEvent } from '@mh/core';
-import { DEFAULT_LIBRARY_NAME, collapseLibraryImports, libraryImportBatchSchema, libraryLocationSchema, normalizeImportPath, type LibraryLocation } from '@mh/shared';
+import { DEFAULT_LIBRARY_NAME, collapseLibraryImports, libraryHoldSchema, libraryImportBatchSchema, libraryLocationSchema, normalizeImportPath, type LibraryLocation } from '@mh/shared';
+import { recordEvent, setLibraryHold } from '@mh/core';
 import { authenticate, badRequest, forbidden, isManager, notFound, requireRole } from '../http';
 
 const LOCATION_KEY = 'libraryLocation';
@@ -104,6 +104,29 @@ export async function libraryRoutes(app: FastifyInstance) {
       summary: `${req.user.name} removed ${row.relPath || 'the whole drive'} from the library index`,
     });
     return { ok: true };
+  });
+
+  /** Files and folders AI must not read. People still see them in the library. */
+  app.get('/library/holds', async () => {
+    const lib = await prisma.library.findFirst();
+    if (!lib) return [];
+    return prisma.libraryHold.findMany({ where: { libraryId: lib.id }, orderBy: { relPath: 'asc' } });
+  });
+
+  app.post('/library/holds', async (req) => {
+    const body = libraryHoldSchema.parse(req.body);
+    const lib = await prisma.library.findFirst();
+    if (!lib) throw badRequest('An admin needs to choose the library drive first');
+    const relPath = normalizeImportPath(body.relPath);
+    if (relPath.split('/').some((part) => part === '..' || part === '.')) throw badRequest('Choose a folder inside the library');
+    await setLibraryHold(lib.id, relPath, body.kind, body.hidden);
+    await recordEvent({
+      actorId: req.user.id, verb: 'update', entityType: 'library', entityId: lib.id, link: '/library',
+      summary: body.hidden
+        ? `${req.user.name} marked ${relPath || 'the whole drive'} not for public use`
+        : `${req.user.name} allowed AI to use ${relPath || 'the whole drive'} again`,
+    });
+    return prisma.libraryHold.findMany({ where: { libraryId: lib.id }, orderBy: { relPath: 'asc' } });
   });
 
   /** Records whether this user's PC can currently reach the library (the resolved path stays on their PC). */

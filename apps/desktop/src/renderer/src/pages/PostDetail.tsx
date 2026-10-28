@@ -134,6 +134,7 @@ export function PostDetailPage() {
             <div className="space-y-4">
               <Field label="Title"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} disabled={!editable} /></Field>
               <Field label="Base copy"><textarea className="input" rows={4} value={body} onChange={(e) => setBody(e.target.value)} disabled={!editable} /></Field>
+              <WarningLines warnings={post.aiWarnings} />
               {editable && <Field label="Platforms"><PlatformPicker value={platforms} onChange={setPlatforms} /></Field>}
               <Field label="Publish time"><input type="datetime-local" className="input w-64" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} disabled={!editable} /></Field>
             </div>
@@ -170,6 +171,15 @@ export function PostDetailPage() {
   );
 }
 
+function WarningLines({ warnings }: { warnings?: { message: string }[] }) {
+  if (!warnings?.length) return null;
+  return (
+    <ul className="space-y-1 rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2">
+      {warnings.map((warning, index) => <li key={index} className="text-xs text-amber-100">{warning.message}</li>)}
+    </ul>
+  );
+}
+
 function VariantEditor({ variant, value, onChange, editable }: { variant: Variant; value: string; onChange: (v: string) => void; editable: boolean }) {
   const preset = PLATFORM_PRESETS[variant.platform];
   const over = value.length > preset.maxChars;
@@ -184,6 +194,7 @@ function VariantEditor({ variant, value, onChange, editable }: { variant: Varian
         <span className={`text-xs ${over ? 'text-rose-400' : 'text-slate-500'}`}>{value.length.toLocaleString()} / {preset.maxChars.toLocaleString()}</span>
       </div>
       <textarea className={`input text-sm ${over ? 'border-rose-700' : ''}`} rows={Math.min(8, Math.max(3, Math.ceil(value.length / 90)))} value={value} onChange={(e) => onChange(e.target.value)} disabled={!editable} />
+      <WarningLines warnings={variant.aiWarnings} />
       {variant.error && <p className="mt-1 text-xs text-rose-400">{variant.error}</p>}
       {variant.externalUrl && (
         <button onClick={() => void window.api.app.openExternal(variant.externalUrl!)} className="mt-1 inline-flex items-center gap-1 text-xs text-indigo-300 hover:underline"><ExternalLink className="h-3 w-3" /> View on {preset.label}</button>

@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, type Prisma } from '@mh/db';
-import { assetProductSchema, libraryAssetBatchSchema, libraryBatchEditSchema, libraryRelocateSchema, libraryScanCompleteSchema, normalizeImportPath } from '@mh/shared';
-import { bus, enqueue, newStorageKey, randomToken, recordEvent, storage } from '@mh/core';
+import { assetHiddenFromAi, assetProductSchema, libraryAssetBatchSchema, libraryBatchEditSchema, libraryRelocateSchema, libraryScanCompleteSchema, normalizeImportPath } from '@mh/shared';
+import { bus, enqueue, libraryHolds, newStorageKey, randomToken, recordEvent, setLibraryHold, storage } from '@mh/core';
 import { authenticate, badRequest, conflict, HttpError, notFound } from '../http';
 
 const LEASE_MS = 5 * 60_000;
@@ -62,23 +62,30 @@ export async function assetRoutes(app: FastifyInstance) {
   app.post('/library/assets/batch', async (req) => {
     const body = libraryAssetBatchSchema.parse(req.body);
     const lease = await requireLease(body.leaseToken);
+    const holds = await libraryHolds(lease.libraryId);
     let tagged = 0;
     for (const a of body.assets) {
       const old = await prisma.asset.findUnique({ where: { libraryId_relPath: { libraryId: lease.libraryId, relPath: a.relPath } } });
       if (old?.excluded) continue;
+      // A new thumbnail must not be sent to vision when the file or its folder is not for public use.
+      const hidden = Boolean(old?.notForPublicUse) || assetHiddenFromAi(a.relPath, holds);
       let thumbnailKey: string | undefined;
       if (a.thumbnail) {
         thumbnailKey = newStorageKey('thumbs', 'png');
         await storage.put(thumbnailKey, Buffer.from(a.thumbnail, 'base64'), 'image/png');
       }
-      const data = { size: BigInt(a.size), mtime: new Date(a.mtime), kind: a.kind, missing: false, indexedAt: new Date(), ...(thumbnailKey ? { thumbnailKey, needsTagging: true } : {}) };
+      const data = {
+        size: BigInt(a.size), mtime: new Date(a.mtime), kind: a.kind, missing: false, indexedAt: new Date(),
+        ...(hidden ? { notForPublicUse: true, needsTagging: false } : {}),
+        ...(thumbnailKey ? { thumbnailKey, ...(hidden ? {} : { needsTagging: true }) } : {}),
+      };
       const asset = await prisma.asset.upsert({
         where: { libraryId_relPath: { libraryId: lease.libraryId, relPath: a.relPath } },
         update: data,
-        create: { libraryId: lease.libraryId, relPath: a.relPath, tags: [], ...data },
+        create: { libraryId: lease.libraryId, relPath: a.relPath, tags: [], notForPublicUse: hidden, ...data },
       });
       if (old?.thumbnailKey && thumbnailKey) await storage.delete(old.thumbnailKey).catch(() => undefined);
-      if (thumbnailKey) {
+      if (thumbnailKey && !hidden) {
         await enqueue('tag-asset', { assetId: asset.id });
         tagged++;
       }
@@ -144,6 +151,15 @@ export async function assetRoutes(app: FastifyInstance) {
       }
       await enqueue('rematch-products', { productId: body.productId });
     }
+    if (body.notForPublicUse !== undefined) {
+      for (const asset of assets) await setLibraryHold(lib.id, asset.relPath, 'FILE', body.notForPublicUse);
+      await recordEvent({
+        actorId: req.user.id, verb: 'update', entityType: 'library', entityId: lib.id, link: '/library',
+        summary: body.notForPublicUse
+          ? `${req.user.name} marked ${assets.length} file${assets.length === 1 ? '' : 's'} not for public use`
+          : `${req.user.name} allowed AI to use ${assets.length} file${assets.length === 1 ? '' : 's'} again`,
+      });
+    }
     return { ok: true, count: assets.length };
   });
 
@@ -169,7 +185,7 @@ export async function assetRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.get<{ Querystring: { q?: string; kind?: string; productId?: string; folder?: string; untagged?: string; page?: string } }>('/library/assets', async (req) => {
+  app.get<{ Querystring: { q?: string; kind?: string; productId?: string; folder?: string; untagged?: string; page?: string; forAi?: string } }>('/library/assets', async (req) => {
     const lib = await prisma.library.findFirst();
     if (!lib) return { items: [], total: 0 };
     const page = Math.max(1, Number(req.query.page ?? 1));
@@ -181,6 +197,7 @@ export async function assetRoutes(app: FastifyInstance) {
       kind: (req.query.kind as never) || undefined,
       relPath: req.query.folder ? { startsWith: `${req.query.folder.replace(/\/$/, '')}/` } : undefined,
       needsTagging: req.query.untagged ? true : undefined,
+      notForPublicUse: req.query.forAi === '1' ? false : undefined,
       products: req.query.productId ? { some: { productId: req.query.productId, OR: [{ confirmed: null }, { confirmed: true }] } } : undefined,
       OR: q
         ? [{ relPath: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }, { tags: { has: q.toLowerCase() } }]
@@ -236,6 +253,8 @@ export async function assetRoutes(app: FastifyInstance) {
   });
 
   app.post<{ Params: { id: string } }>('/library/assets/:id/retag', async (req) => {
+    const asset = await prisma.asset.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (asset.notForPublicUse) throw badRequest('This file is not for public use, so AI will not read it.');
     await prisma.asset.update({ where: { id: req.params.id }, data: { needsTagging: true } });
     await enqueue('tag-asset', { assetId: req.params.id });
     return { ok: true };

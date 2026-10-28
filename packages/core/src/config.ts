@@ -84,6 +84,13 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: optional,
   TIKTOK_CLIENT_KEY: optional,
   TIKTOK_CLIENT_SECRET: optional,
+
+  /** Used only for the default org when no Shopify integration is saved in the app. */
+  SHOPIFY_STORE_DOMAIN: optional,
+  SHOPIFY_ADMIN_TOKEN: optional,
+  SHOPIFY_API_VERSION: z.string().default('2024-10'),
+  /** Folder of reference documents watched for the default org. Empty disables the watch. */
+  KNOWLEDGE_WATCH_DIR: optional,
 });
 
 export type Config = z.infer<typeof schema>;

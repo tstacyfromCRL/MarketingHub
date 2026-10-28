@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { useSession } from './lib/session';
+import { BrandMark } from './components/BrandMark';
 import { Spinner } from './components/ui';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/Login';
@@ -37,7 +38,14 @@ export function App() {
     return window.api.app.onNavigate((route) => navigate(route));
   }, [user, navigate]);
 
-  if (!ready) return <Spinner label="Starting Mantis..." />;
+  if (!ready) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-ink">
+        <BrandMark className="h-14 w-auto" />
+        <Spinner label="Starting..." />
+      </div>
+    );
+  }
   if (!user) return <LoginPage />;
 
   return (

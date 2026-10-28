@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { api, errorMessage } from '../lib/api';
 import { useSession, type User } from '../lib/session';
+import { BrandMark } from '../components/BrandMark';
 import { Button, ErrorText, Field } from '../components/ui';
 
 type Mode = 'welcome' | 'company' | 'join' | 'login';
@@ -170,7 +171,11 @@ export function LoginPage() {
 }
 
 function Wordmark() {
-  return <h1 className="text-center text-3xl font-light tracking-wide text-sage">Mantis</h1>;
+  return (
+    <h1 className="flex justify-center">
+      <BrandMark className="h-14 w-auto" />
+    </h1>
+  );
 }
 
 function Shell({ children }: { children: ReactNode }) {

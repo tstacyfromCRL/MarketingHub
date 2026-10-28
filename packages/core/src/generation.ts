@@ -8,16 +8,13 @@ import {
   type Layer,
   type Platform,
 } from '@mh/shared';
+import { config } from './config';
 import { generateImage, generateText, parseJson } from './ai/providers';
-import { brandProfile, retrieve } from './knowledge';
+import { validateOutput, type OutputWarning } from './ai/validate';
+import { brandProfile, retrieve, type RetrievedChunk } from './knowledge';
+import { getDefaultOrgId } from './org';
+import { selectPlaybook } from './playbooks';
 import { newStorageKey, storage } from './storage';
-
-const TYPE_INSTRUCTIONS: Record<ContentType, string> = {
-  SOCIAL_POST: 'Write one social media post. Hook in the first line, concrete benefit, clear call to action, and 2-5 relevant hashtags at the end.',
-  EMAIL: 'Write a marketing email. First line: "Subject: ...". Second line: "Preview: ...". Then the body with a greeting, short paragraphs, one clear call to action and a sign-off.',
-  BLOG: 'Write a blog post in Markdown: an H1 title, a short intro, 3-5 H2 sections, and a conclusion with a call to action. About 700-900 words.',
-  DOCUMENTATION: 'Write product documentation in Markdown: an overview, prerequisites if relevant, numbered steps, and a troubleshooting/FAQ section. Be precise and neutral in tone.',
-};
 
 export interface BrandContext {
   system: string;
@@ -27,6 +24,21 @@ export interface BrandContext {
   headingFont: string;
   bodyFont: string;
   productNames: string[];
+  productSkus: string[];
+  claims: string[];
+  confidential: string[];
+  donts: string[];
+  droppedInternal: boolean;
+  orgId: string;
+}
+
+/** Cloud models never see INTERNAL knowledge. Local models may. */
+export function chunksAllowedForProvider(chunks: RetrievedChunk[], provider: string): { kept: RetrievedChunk[]; droppedInternal: boolean } {
+  if (provider === 'openai' || provider === 'anthropic') {
+    const kept = chunks.filter((chunk) => chunk.sensitivity !== 'INTERNAL' && chunk.sensitivity !== 'RESTRICTED');
+    return { kept, droppedInternal: kept.length !== chunks.filter((chunk) => chunk.sensitivity !== 'RESTRICTED').length };
+  }
+  return { kept: chunks.filter((chunk) => chunk.sensitivity !== 'RESTRICTED'), droppedInternal: false };
 }
 
 const words = (text: string) => new Set(text.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []);
@@ -35,8 +47,8 @@ const words = (text: string) => new Set(text.toLowerCase().match(/[a-z0-9]{4,}/g
  * Up to `max` past posts to imitate: same-platform samples first, then the ones sharing the most
  * words with the brief.
  */
-async function styleExamples(brief: string, platform: Platform | undefined, max = 3): Promise<{ ids: Set<string>; texts: string[] }> {
-  const samples = await prisma.source.findMany({ where: { kind: 'SAMPLE_POST' }, orderBy: { createdAt: 'desc' }, take: 60 });
+async function styleExamples(orgId: string, brief: string, platform: Platform | undefined, max = 3): Promise<{ ids: Set<string>; texts: string[] }> {
+  const samples = await prisma.source.findMany({ where: { organizationId: orgId, kind: 'SAMPLE_POST' }, orderBy: { createdAt: 'desc' }, take: 60 });
   const briefWords = words(brief);
   const scored = samples
     .filter((s) => s.content.trim())
@@ -53,19 +65,36 @@ const productFact = (p: { name: string; description: string; features: string[];
   `Product ${p.name}: ${p.description}${p.features.length ? ` Features: ${p.features.join('; ')}.` : ''}${p.pricing ? ` Pricing: ${p.pricing}.` : ''}${p.url ? ` URL: ${p.url}` : ''}`;
 
 /** System prompt from the brand profile plus retrieved knowledge relevant to the brief. */
-export async function buildBrandContext(brief: string, productIds: string[] = [], platform?: Platform): Promise<BrandContext> {
-  const brand = await brandProfile();
-  const products = productIds.length ? await prisma.product.findMany({ where: { id: { in: productIds } } }) : [];
-  const [retrieved, examples] = await Promise.all([
-    retrieve([brief, ...products.map((p) => p.name)].join(' '), 10).catch(() => []),
-    styleExamples(brief, platform),
+export async function buildBrandContext(orgId: string, brief: string, productIds: string[] = [], platform?: Platform): Promise<BrandContext> {
+  const brand = await brandProfile(orgId);
+  const products = productIds.length ? await prisma.product.findMany({ where: { id: { in: productIds }, organizationId: orgId } }) : [];
+  const [retrievedRaw, examples, linkedClaims, terms] = await Promise.all([
+    retrieve(orgId, [brief, ...products.map((p) => p.name)].join(' '), 10).catch(() => [] as RetrievedChunk[]),
+    styleExamples(orgId, brief, platform),
+    productIds.length
+      ? prisma.claim.findMany({
+          where: {
+            organizationId: orgId,
+            status: 'APPROVED',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            productIds: { hasSome: productIds },
+          },
+        })
+      : Promise.resolve([]),
+    prisma.confidentialTerm.findMany({ where: { organizationId: orgId } }),
   ]);
+  const { kept, droppedInternal } = chunksAllowedForProvider(retrievedRaw, config.AI_TEXT_PROVIDER);
+  // Sample posts and claim chunks are not facts. Samples are tone. Claims get their own block.
   const facts = [
     ...products.map(productFact),
-    // Sample posts teach style only; their claims may be out of date.
-    ...retrieved.filter((r) => !(r.sourceType === 'SOURCE' && examples.ids.has(r.sourceId))).slice(0, 8).map((r) => r.text),
+    ...kept.filter((r) => r.sourceType !== 'CLAIM' && !(r.sourceType === 'SOURCE' && examples.ids.has(r.sourceId))).slice(0, 8).map((r) => r.text),
+  ];
+  const claimTexts = [
+    ...kept.filter((r) => r.sourceType === 'CLAIM').map((r) => r.text),
+    ...linkedClaims.filter((claim) => claim.sensitivity !== 'RESTRICTED' && (config.AI_TEXT_PROVIDER === 'local' || config.AI_TEXT_PROVIDER === 'mock' || claim.sensitivity === 'PUBLIC')).map((claim) => claim.text),
   ];
   const name = brand.companyName || 'the company';
+  const banned = terms.flatMap((term) => [term.term, ...term.aliases]).filter(Boolean);
   const system = [
     `You are the in-house marketing writer for ${name}.${brand.tagline ? ` Tagline: "${brand.tagline}".` : ''}`,
     brand.summary && `About ${name}:\n${brand.summary}`,
@@ -74,11 +103,12 @@ export async function buildBrandContext(brief: string, productIds: string[] = []
     brand.voice && `Brand voice: ${brand.voice}`,
     brand.dos.length ? `Always: ${brand.dos.join('; ')}` : '',
     brand.donts.length ? `Never: ${brand.donts.join('; ')}` : '',
+    banned.length ? `Never mention these names in any output: ${banned.join(', ')}.` : '',
     examples.texts.length
       ? `Style references: past posts written by the team. Match their tone, rhythm, length and emoji/hashtag habits. ` +
         `Do not copy their wording or reuse their facts.\n${examples.texts.map((t, i) => `--- Example ${i + 1}\n${t}`).join('\n')}`
       : '',
-    'Only state facts that appear in the provided company knowledge. Do not invent statistics, prices, customers or awards.',
+    'Only use numbers, statistics, customer results and awards that appear in Approved claims or Company knowledge. If none fit, write without them.',
   ].filter(Boolean).join('\n\n');
   return {
     system,
@@ -88,6 +118,28 @@ export async function buildBrandContext(brief: string, productIds: string[] = []
     headingFont: brand.fonts.find((f) => /head|display|title/i.test(f.role))?.family ?? brand.fonts[0]?.family ?? 'Arial',
     bodyFont: brand.fonts.find((f) => /body|text/i.test(f.role))?.family ?? brand.fonts[0]?.family ?? 'Arial',
     productNames: products.map((p) => p.name),
+    productSkus: products.map((p) => p.sku).filter(Boolean),
+    claims: [...new Set(claimTexts)],
+    confidential: terms.map((term) => ({ term: term.term, aliases: term.aliases })).flatMap((term) => [term.term, ...term.aliases]),
+    donts: brand.donts,
+    droppedInternal,
+    orgId,
+  };
+}
+
+function claimBlock(claims: string[]): string {
+  return claims.length ? `Approved claims:\n${claims.map((claim) => `- ${claim}`).join('\n')}` : 'Approved claims: (none)';
+}
+
+function warningContext(ctx: BrandContext, playbook: { hashtagMin?: number | null; hashtagMax?: number | null; maxChars?: number | null } | null, maxChars?: number) {
+  return {
+    playbook,
+    maxChars,
+    facts: ctx.facts,
+    claims: ctx.claims,
+    confidentialTerms: ctx.confidential.map((term) => ({ term })),
+    donts: ctx.donts,
+    ignoreTexts: [...ctx.productNames, ...ctx.productSkus],
   };
 }
 
@@ -96,27 +148,36 @@ function knowledgeBlock(facts: string[]): string {
 }
 
 export async function generateContent(input: {
+  orgId?: string;
   type: ContentType;
   brief: string;
   platform?: Platform;
   productIds?: string[];
   tone?: string;
-}): Promise<string> {
-  const ctx = await buildBrandContext(input.brief, input.productIds, input.platform);
+}): Promise<{ text: string; warnings: OutputWarning[] }> {
+  const orgId = input.orgId ?? (await getDefaultOrgId());
+  const ctx = await buildBrandContext(orgId, input.brief, input.productIds, input.platform);
+  const playbook = await selectPlaybook(orgId, input.platform, input.type);
   const preset = input.platform ? PLATFORM_PRESETS[input.platform] : null;
+  const limit = playbook?.maxChars ?? preset?.maxChars;
   const prompt = [
-    TYPE_INSTRUCTIONS[input.type],
-    preset && `Platform: ${preset.label}. Stay under ${preset.maxChars} characters.`,
+    playbook?.body,
+    playbook?.hashtagMin != null && `Use between ${playbook.hashtagMin} and ${playbook.hashtagMax ?? playbook.hashtagMin} hashtags.`,
+    preset && `Platform: ${preset.label}.${limit ? ` Stay under ${limit} characters.` : ''}`,
     input.tone && `Tone for this piece: ${input.tone}`,
     knowledgeBlock(ctx.facts),
+    claimBlock(ctx.claims),
     `Brief: ${input.brief}`,
   ].filter(Boolean).join('\n\n');
-  return generateText({
+  const text = await generateText({
     system: ctx.system,
     prompt,
     maxTokens: input.type === 'BLOG' || input.type === 'DOCUMENTATION' ? 3000 : 800,
-    mock: () => mockContent(input.type, input.brief, ctx, preset?.maxChars),
+    mock: () => mockContent(input.type, input.brief, ctx, limit),
   });
+  const warnings = validateOutput(text, warningContext(ctx, playbook, limit));
+  if (ctx.droppedInternal) warnings.push({ code: 'INTERNAL_OMITTED', message: 'Internal knowledge was left out because this draft used a cloud model.' });
+  return { text, warnings };
 }
 
 function mockContent(type: ContentType, brief: string, ctx: BrandContext, maxChars?: number): string {
@@ -137,18 +198,33 @@ function mockContent(type: ContentType, brief: string, ctx: BrandContext, maxCha
 }
 
 /** Platform-specific versions of a post's copy, each within the platform's length limit. */
-export async function adaptCopyForPlatforms(body: string, platforms: Platform[]): Promise<Record<string, string>> {
-  if (platforms.length === 0) return {};
-  const ctx = await buildBrandContext(body);
-  const limits = platforms.map((p) => `${p}: max ${PLATFORM_PRESETS[p].maxChars} characters`).join('; ');
+export async function adaptCopyForPlatforms(orgId: string, body: string, platforms: Platform[]): Promise<{ variants: Record<string, string>; warnings: Record<string, OutputWarning[]> }> {
+  if (platforms.length === 0) return { variants: {}, warnings: {} };
+  const ctx = await buildBrandContext(orgId, body);
+  const playbooks = await Promise.all(platforms.map(async (platform) => ({ platform, playbook: await selectPlaybook(orgId, platform, 'SOCIAL_POST') })));
+  const guidance = playbooks
+    .map(({ platform, playbook }) => {
+      const limit = playbook?.maxChars ?? PLATFORM_PRESETS[platform].maxChars;
+      const tags = playbook?.hashtagMin != null ? ` Use ${playbook.hashtagMin}-${playbook.hashtagMax ?? playbook.hashtagMin} hashtags.` : '';
+      return `${platform} (max ${limit} characters).${tags} ${playbook?.body ?? ''}`;
+    })
+    .join('\n');
   const text = await generateText({
     system: ctx.system,
     json: true,
-    prompt: `Adapt this social post for each platform (${limits}). Match each platform's conventions (e.g. LinkedIn professional, X concise, Instagram visual with hashtags). Keep facts identical.\n\nPost:\n${body}\n\nRespond as JSON: {"variants": {"<platform>": "<text>"}}`,
+    prompt: `Adapt this social post for each platform. Follow that platform's instructions. Keep facts identical.\n\n${guidance}\n\n${claimBlock(ctx.claims)}\n\nPost:\n${body}\n\nRespond as JSON: {"variants": {"<platform>": "<text>"}}`,
     mock: () => JSON.stringify({ variants: Object.fromEntries(platforms.map((p) => [p, body.slice(0, PLATFORM_PRESETS[p].maxChars)])) }),
   });
   const parsed = parseJson<{ variants?: Record<string, string> }>(text).variants ?? {};
-  return Object.fromEntries(platforms.map((p) => [p, (parsed[p] ?? body).slice(0, PLATFORM_PRESETS[p].maxChars)]));
+  const variants: Record<string, string> = {};
+  const warnings: Record<string, OutputWarning[]> = {};
+  for (const platform of platforms) {
+    const playbook = playbooks.find((row) => row.platform === platform)?.playbook ?? null;
+    const limit = playbook?.maxChars ?? PLATFORM_PRESETS[platform].maxChars;
+    variants[platform] = (parsed[platform] ?? body).slice(0, limit);
+    warnings[platform] = validateOutput(variants[platform], { ...warningContext(ctx, playbook, limit), platform });
+  }
+  return { variants, warnings };
 }
 
 export interface PostIdea {
@@ -160,9 +236,12 @@ export interface PostIdea {
 }
 
 /** Plans `count` distinct posts for a campaign. */
-export async function generatePostIdeas(input: { brief: string; count: number; productIds: string[]; platforms: Platform[]; startDate: string; endDate: string }): Promise<PostIdea[]> {
-  const ctx = await buildBrandContext(input.brief, input.productIds, input.platforms.length === 1 ? input.platforms[0] : undefined);
-  const ideas: PostIdea[] = [];
+export async function generatePostIdeas(input: { orgId?: string; brief: string; count: number; productIds: string[]; platforms: Platform[]; startDate: string; endDate: string; pillar?: string | null }): Promise<(PostIdea & { warnings: OutputWarning[] })[]> {
+  const orgId = input.orgId ?? (await getDefaultOrgId());
+  const ctx = await buildBrandContext(orgId, input.brief, input.productIds, input.platforms.length === 1 ? input.platforms[0] : undefined);
+  const playbook = await selectPlaybook(orgId, input.platforms.length === 1 ? input.platforms[0] : null, 'SOCIAL_POST', input.pillar);
+  const angles = await selectPlaybook(orgId, null, 'CAMPAIGN_IDEAS');
+  const ideas: (PostIdea & { warnings: OutputWarning[] })[] = [];
   const batch = 10;
   while (ideas.length < input.count) {
     const n = Math.min(batch, input.count - ideas.length);
@@ -173,9 +252,11 @@ export async function generatePostIdeas(input: { brief: string; count: number; p
       maxTokens: 4000,
       prompt: [
         `Plan ${n} distinct social media posts for a campaign running ${input.startDate} to ${input.endDate} on ${input.platforms.join(', ')}.`,
-        'Vary the angle (education, social proof, product feature, behind the scenes, offer, question/engagement).',
+        playbook?.body,
+        angles?.body,
         already && `Already planned (do not repeat):\n${already}`,
         knowledgeBlock(ctx.facts),
+        claimBlock(ctx.claims),
         `Campaign brief: ${input.brief}`,
         'For each post give: title (internal, short), body (the post copy with hashtags), headline (max 8 words, for the graphic), subline (max 14 words), imagePrompt (a photographic/illustrative scene description for an image generator, no text in the image).',
         'Respond as JSON: {"posts": [{"title","body","headline","subline","imagePrompt"}]}',
@@ -198,12 +279,14 @@ export async function generatePostIdeas(input: { brief: string; count: number; p
     const posts = parseJson<{ posts?: Partial<PostIdea>[] }>(text).posts ?? [];
     if (posts.length === 0) throw new Error('The AI returned no posts');
     for (const p of posts.slice(0, n)) {
+      const body = String(p.body ?? '');
       ideas.push({
         title: String(p.title ?? `Post ${ideas.length + 1}`),
-        body: String(p.body ?? ''),
+        body,
         headline: String(p.headline ?? p.title ?? ''),
         subline: String(p.subline ?? ''),
         imagePrompt: String(p.imagePrompt ?? input.brief),
+        warnings: validateOutput(body, warningContext(ctx, playbook, playbook?.maxChars ?? undefined)),
       });
     }
   }
@@ -241,7 +324,7 @@ export async function composeDesign(input: ComposeInput): Promise<{ doc: DesignD
   const preset = PLATFORM_PRESETS[input.platform];
   const W = input.sizeOverride?.width ?? preset.width;
   const H = input.sizeOverride?.height ?? preset.height;
-  const ctx = await buildBrandContext(input.headline);
+  const ctx = await buildBrandContext(await getDefaultOrgId(), input.headline);
   const primary = ctx.palette[0] ?? '#1e293b';
   const accent = ctx.palette[1] ?? '#f59e0b';
   const layers: Layer[] = [];

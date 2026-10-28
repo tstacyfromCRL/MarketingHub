@@ -1,0 +1,11 @@
+{
+  "key": "linkedin-field-notes",
+  "name": "Field notes",
+  "platform": "linkedin",
+  "contentType": "SOCIAL_POST",
+  "pillar": "field-notes",
+  "body": "Write a LinkedIn post as a field note: what was checked, what was found, and one thing the reader can do this week. No slogans.",
+  "hashtagMin": 2,
+  "hashtagMax": 4,
+  "maxChars": 1300
+}

@@ -21,7 +21,7 @@ export async function calendarRoutes(app: FastifyInstance) {
         select: { id: true, title: true, status: true, scheduledAt: true, postedAt: true, platforms: true, creatorId: true, campaignId: true },
       }),
       prisma.task.findMany({
-        where: { dueDate: { gte: from, lte: to } },
+        where: { active: true, dueDate: { gte: from, lte: to } },
         select: { id: true, title: true, dueDate: true, assigneeId: true, stage: { select: { name: true, color: true } } },
       }),
       prisma.scheduleEvent.findMany({

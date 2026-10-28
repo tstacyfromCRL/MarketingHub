@@ -75,6 +75,7 @@ export function PostTable({ posts, bulkActions = [], empty }: { posts: Post[]; b
               </Link>
               <div className="w-40 text-xs text-slate-500">{p.platforms.map((x) => PLATFORM_PRESETS[x].label).join(', ')}</div>
               <div className="w-40 text-xs text-slate-400">{p.scheduledAt ? formatWhen(p.scheduledAt) : 'No time set'}</div>
+              {(p.aiWarnings?.length ?? 0) > 0 && <Badge color="#b45309">{p.aiWarnings!.length} warning{p.aiWarnings!.length === 1 ? '' : 's'}</Badge>}
               <Badge color={STATUS_COLORS[p.status]}>{POST_STATUS_LABELS[p.status]}</Badge>
             </div>
           );

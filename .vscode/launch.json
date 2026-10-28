@@ -32,7 +32,7 @@
       "windows": {
         "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron-vite.CMD"
       },
-      "runtimeArgs": ["--sourcemap"],
+      "runtimeArgs": ["--sourcemap", "--watch"],
       "env": { "REMOTE_DEBUGGING_PORT": "9222" },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"],

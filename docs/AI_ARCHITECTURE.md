@@ -373,6 +373,31 @@ Carnegie Robotics has defense-adjacent work, so some technical material may be e
 
 ---
 
+## Knowledge system
+
+Knowledge is four different things, and generation treats them differently.
+
+- **Brand rules** live on `BrandProfile` (one row per organization). Voice, audience, tagline, visual direction, and the always/never lists go in every prompt. They are not retrieved by search.
+- **Playbooks** are `PromptTemplate` rows. `selectPlaybook` picks the most specific active row for the platform, content type, and pillar, then falls back to a seeded generic template. Pillars and content types are data, not enums.
+- **Facts** are products, approved claims, accomplishments, crawled pages, and documents. `retrieve` searches that org's chunks. Claims also appear in an "Approved claims" block. The draft is told to use numbers only from that block or from company knowledge.
+- **Style examples** are `Source` rows with `kind = SAMPLE_POST`. They are tone only. Their text is kept out of the fact list.
+
+`validateOutput` checks a draft for a confidential name, a number that is not in the facts or claims, a hashtag count outside the playbook, a length over the limit, and a phrase from the brand "never" list. Warnings are stored on `Post.aiWarnings` and `PostVariant.aiWarnings` and shown in the editor. They do not block the draft.
+
+Sensitivity: `RESTRICTED` is never embedded. When the text provider is `openai` or `anthropic`, `INTERNAL` chunks are left out of the prompt and the draft gets an `INTERNAL_OMITTED` warning. The `local` and `mock` providers may use internal chunks. This is option (b) in §6. There is no `Generation` table, so the warning is stored on the post.
+
+A knowledge pack (`knowledge-pack.example/`) is the portable copy of one company's knowledge. It has no organization id. `pnpm kb:import` and Knowledge → Import / Export load it into the company this server is running for. Product connectors (Shopify, and CSV as the second implementation) sync through `ProductSourceConnector`. A shared SKU keeps connector-owned name, price, URL, and description, and pack-owned features, positioning, and links.
+
+### Tenancy readiness
+
+There is one organization, slug `default`. Code passes that id around. There is no org switcher, signup, or billing. A second organization exists only inside tests.
+
+These `// TENANCY:` comments are the tables still shared by the whole database:
+
+- `User`, `Invite`, `QuickLink`, `AppSetting`, `Library`, `LibraryImport`, `ScanLease`, `Asset`, `AssetProduct`, `Board`, `Stage`, `TaskCategory`, `Task`, `ActivityEvent`, `Notification`, `ScheduleEvent`, `BrandFile`, `ContentDoc`, `Design`, `Campaign`, `Post`, `PostVariant`, `SocialAccount`, `OAuthState` (schema header).
+- `BrandFile` is not org-scoped. New knowledge files use `orgs/<orgId>/` storage keys.
+- `Campaign`, `Post`, and `PostVariant` are not org-scoped. They do carry `pillar` and `aiWarnings`.
+
 ## 7. Non-goals
 
 - Pretraining a model from scratch.

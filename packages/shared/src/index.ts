@@ -6,3 +6,4 @@ export * from './design';
 export * from './campaign';
 export * from './colors';
 export * from './api';
+export * from './knowledgePack';

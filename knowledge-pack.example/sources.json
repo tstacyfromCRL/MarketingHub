@@ -1,0 +1,9 @@
+[
+  {
+    "key": "home",
+    "url": "https://example.com/acme-field-robotics",
+    "kind": "WEBSITE",
+    "recrawlDays": 14,
+    "sensitivity": "PUBLIC"
+  }
+]

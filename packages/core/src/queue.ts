@@ -1,13 +1,16 @@
 import { Queue, Worker, type JobsOptions } from 'bullmq';
 import { config } from './config';
+import { getDefaultOrgId } from './org';
 
 export interface JobPayloads {
   'publish-post': { postId: string };
   'sweep-due-posts': Record<string, never>;
-  'scrape-source': { sourceId: string };
-  'recrawl-sources': Record<string, never>;
-  'embed-knowledge': { sourceType: 'BRAND' | 'PRODUCT' | 'ACCOMPLISHMENT' | 'SOURCE'; sourceId: string };
-  'reindex-knowledge': Record<string, never>;
+  'scrape-source': { orgId: string; sourceId: string };
+  'recrawl-sources': { orgId: string };
+  'embed-knowledge': { orgId: string; sourceType: 'BRAND' | 'PRODUCT' | 'ACCOMPLISHMENT' | 'SOURCE' | 'CLAIM'; sourceId: string };
+  'reindex-knowledge': { orgId: string };
+  'sync-products': { orgId: string };
+  'watch-knowledge': { orgId: string };
   'tag-asset': { assetId: string };
   'rematch-products': { productId?: string };
   'generate-campaign': { campaignId: string };
@@ -72,11 +75,19 @@ export async function enqueue<K extends JobName>(name: K, data: JobPayloads[K], 
   setTimeout(() => void run(1), opts.delayMs ?? 0);
 }
 
+const ORG_JOBS = new Set<JobName>(['recrawl-sources', 'sync-products', 'watch-knowledge']);
+
+/** Repeating jobs run for the one company this server is configured for. */
+async function repeatPayload(name: JobName): Promise<JobPayloads[JobName]> {
+  if (ORG_JOBS.has(name)) return { orgId: await getDefaultOrgId() } as JobPayloads[JobName];
+  return {} as JobPayloads[JobName];
+}
+
 /** Dev mode without Redis: run jobs inside the current process. */
 export function startInlineJobs(handlers: JobHandlers, repeat: { name: JobName; everyMs: number }[]): void {
   inlineHandlers = handlers;
   for (const r of repeat) {
-    setInterval(() => void enqueue(r.name, {} as never), r.everyMs);
+    setInterval(() => void repeatPayload(r.name).then((data) => enqueue(r.name, data as never)), r.everyMs);
   }
   console.log('[jobs] running background jobs in-process (no REDIS_URL)');
 }
@@ -88,7 +99,7 @@ export async function startBullWorker(
 ): Promise<Worker> {
   queue ??= new Queue(QUEUE_NAME, { connection: connection() });
   for (const r of repeat) {
-    await queue.upsertJobScheduler(`repeat:${r.name}`, { every: r.everyMs }, { name: r.name, data: {} });
+    await queue.upsertJobScheduler(`repeat:${r.name}`, { every: r.everyMs }, { name: r.name, data: await repeatPayload(r.name) });
   }
   const worker = new Worker(
     QUEUE_NAME,

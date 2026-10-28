@@ -78,6 +78,48 @@ export function DesignEditorPage() {
     }
   }, [existing.data]);
 
+  // A library "Use in New Design" opens a blank canvas and places that file once.
+  const libraryAssetId = params.get('asset');
+  const placedLibraryAsset = useRef<string | null>(null);
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  useEffect(() => {
+    if (id || !libraryAssetId || placedLibraryAsset.current) return;
+    placedLibraryAsset.current = libraryAssetId;
+    void (async () => {
+      try {
+        const asset = await api.get<Asset>(`/library/assets/${libraryAssetId}`);
+        const canvas = docRef.current;
+        if (asset.kind !== 'IMAGE' || !canvas) return;
+        let key = asset.storedKey;
+        if (!key) {
+          const uploaded = (await window.api.library.upload(asset.id, asset.relPath)) as Asset;
+          key = uploaded.storedKey;
+        }
+        if (!key) throw new Error('Could not read that file from the shared drive.');
+        const img = new window.Image();
+        img.src = fileUrl(key)!;
+        await img.decode();
+        const scale = Math.min((canvas.width * 0.8) / img.naturalWidth, (canvas.height * 0.8) / img.naturalHeight, 1);
+        const width = Math.max(1, Math.round(img.naturalWidth * scale));
+        const height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const label = asset.relPath.split('/').pop() ?? 'Image';
+        const layer: ImageLayer = {
+          id: newLayerId(), name: label, type: 'image', src: key, fit: 'contain', role: 'product',
+          x: Math.round((canvas.width - width) / 2), y: Math.round((canvas.height - height) / 2),
+          width, height, rotation: 0, opacity: 1, visible: true, locked: false,
+        };
+        const latest = docRef.current ?? canvas;
+        setDoc({ ...latest, layers: [...latest.layers, layer] });
+        setSelected(layer.id);
+        setName(label);
+      } catch (e) {
+        placedLibraryAsset.current = null;
+        setError(errorMessage(e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+      }
+    })();
+  }, [id, libraryAssetId, setDoc]);
+
   const setDoc = useCallback((next: DesignDoc) => {
     setDocState((cur) => {
       if (cur) setPast((p) => [...p.slice(-49), cur]);
@@ -481,7 +523,7 @@ function LibraryPickModal({ onClose, onPick }: { onClose: () => void; onPick: (k
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { data } = useQuery({ queryKey: ['assets', 'pick', q], queryFn: () => api.get<{ items: Asset[] }>(`/library/assets?kind=IMAGE&q=${encodeURIComponent(q)}`) });
+  const { data } = useQuery({ queryKey: ['assets', 'pick', q], queryFn: () => api.get<{ items: Asset[] }>(`/library/assets?kind=IMAGE&forAi=1&q=${encodeURIComponent(q)}`) });
   const pick = async (a: Asset) => {
     setBusy(a.id);
     setError(null);

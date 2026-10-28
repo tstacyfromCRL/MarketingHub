@@ -1,6 +1,7 @@
-import { prisma } from '@mh/db';
+import { prisma, type Prisma } from '@mh/db';
 import { PLATFORM_PRESETS, planCampaignSlots, type Platform } from '@mh/shared';
 import { recordEvent } from './activity';
+import { getDefaultOrgId } from './org';
 import { bus } from './bus';
 import { saveDesign } from './designs';
 import { adaptCopyForPlatforms, composeDesign, generatePostIdeas } from './generation';
@@ -33,13 +34,15 @@ export async function generateCampaign(campaignId: string): Promise<void> {
       platforms,
       startDate: c.startDate.toISOString().slice(0, 10),
       endDate: c.endDate.toISOString().slice(0, 10),
+      pillar: c.pillar,
     });
 
     const productPhoto = await firstProductPhoto(c.productIds);
+    const orgId = await getDefaultOrgId();
 
     for (let i = 0; i < slots.length; i++) {
       const idea = ideas[i];
-      const copy = await adaptCopyForPlatforms(idea.body, platforms);
+      const copy = await adaptCopyForPlatforms(orgId, idea.body, platforms);
       const designByPlatform = new Map<string, string>();
       if (c.generateGraphics) {
         const targets = c.perPlatformFiles ? platforms : [platforms[0]];
@@ -57,13 +60,15 @@ export async function generateCampaign(campaignId: string): Promise<void> {
           campaignId: c.id,
           title: idea.title,
           body: idea.body,
+          pillar: c.pillar,
+          aiWarnings: idea.warnings as unknown as Prisma.InputJsonValue,
           platforms,
           perPlatformFiles: c.perPlatformFiles,
           scheduledAt: slots[i],
           creatorId: c.createdById,
           designId: sharedDesign,
           variants: {
-            create: platforms.map((p) => ({ platform: p, body: copy[p] ?? idea.body, designId: designByPlatform.get(p) ?? sharedDesign })),
+            create: platforms.map((p) => ({ platform: p, body: copy.variants[p] ?? idea.body, aiWarnings: (copy.warnings[p] ?? []) as unknown as Prisma.InputJsonValue, designId: designByPlatform.get(p) ?? sharedDesign })),
           },
         },
       });
@@ -84,7 +89,7 @@ export async function generateCampaign(campaignId: string): Promise<void> {
 async function firstProductPhoto(productIds: string[]): Promise<string | undefined> {
   if (productIds.length === 0) return undefined;
   const link = await prisma.assetProduct.findFirst({
-    where: { productId: { in: productIds }, OR: [{ confirmed: null }, { confirmed: true }], asset: { kind: 'IMAGE', missing: false } },
+    where: { productId: { in: productIds }, OR: [{ confirmed: null }, { confirmed: true }], asset: { kind: 'IMAGE', missing: false, notForPublicUse: false } },
     orderBy: [{ confirmed: { sort: 'desc', nulls: 'last' } }, { similarity: 'desc' }],
     include: { asset: true },
   });

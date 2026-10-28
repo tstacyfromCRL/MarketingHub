@@ -86,8 +86,15 @@ export const libraryBatchEditSchema = z
     productId: z.string().optional(),
     /** Drop the files from the library index. The files stay on the shared drive. */
     remove: z.boolean().optional(),
+    /** true keeps the files in the library but out of AI. false lets AI read them again, unless a parent folder is still flagged. */
+    notForPublicUse: z.boolean().optional(),
   })
-  .refine((v) => v.addTags?.length || v.productId || v.remove, { message: 'Choose tags, a product, or remove' });
+  .refine((v) => v.addTags?.length || v.productId || v.remove || v.notForPublicUse !== undefined, { message: 'Choose tags, a product, remove, or a public-use flag' });
+export const libraryHoldSchema = z.object({
+  relPath: z.string().default(''),
+  kind: z.enum(['FOLDER', 'FILE']),
+  hidden: z.boolean(),
+});
 export const libraryRelocateSchema = z.object({
   folder: z.string().trim().min(1),
   moves: z.array(z.object({ id: z.string(), relPath: z.string().min(1) })).min(1).max(200),
@@ -111,7 +118,10 @@ export const taskSchema = z.object({
   dueDate: z.string().datetime().nullable().default(null),
   categoryIds: z.array(z.string()).default([]),
 });
-export const taskUpdateSchema = taskSchema.partial();
+export const taskUpdateSchema = taskSchema.partial().extend({
+  /** false archives the task. It stays stored and leaves the working board. */
+  active: z.boolean().optional(),
+});
 export const taskMoveSchema = z.object({ stageId: z.string(), order: z.number() });
 
 // ---- Team calendar ----
@@ -125,7 +135,9 @@ export const scheduleEventSchema = z.object({
 });
 
 // ---- Knowledge base ----
-export const SOURCE_KINDS = ['WEBSITE', 'ARTICLE', 'LINKEDIN', 'MANUAL', 'SAMPLE_POST'] as const;
+export const SOURCE_KINDS = ['WEBSITE', 'ARTICLE', 'LINKEDIN', 'MANUAL', 'SAMPLE_POST', 'DOCUMENT'] as const;
+export const SENSITIVITIES = ['PUBLIC', 'INTERNAL', 'RESTRICTED'] as const;
+export type Sensitivity = (typeof SENSITIVITIES)[number];
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 export const brandProfileSchema = z.object({
   companyName: z.string().default(''),
@@ -237,9 +249,11 @@ export const composeDesignSchema = z.object({
 });
 
 // ---- Posts & campaigns ----
+export const outputWarningSchema = z.object({ code: z.string(), message: z.string() });
 export const postSchema = z.object({
   title: z.string().min(1),
   body: z.string(),
+  aiWarnings: z.array(outputWarningSchema).default([]),
   platforms: z.array(z.enum(PLATFORMS)).min(1),
   scheduledAt: z.string().datetime().nullable().default(null),
   designId: z.string().nullable().default(null),

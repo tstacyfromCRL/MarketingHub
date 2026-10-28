@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@mh/db';
 import { onboardingStateSchema, summarizeCompanySchema } from '@mh/shared';
 import {
-  analysisProgress, brandProfile, crawlCompanySite, enqueue, onboardingState, proposeSummaryRefresh, recordEvent, saveOnboardingState,
+  analysisProgress, brandProfile, crawlCompanySite, enqueue, getDefaultOrgId, onboardingState, proposeSummaryRefresh, recordEvent, saveOnboardingState,
   startBrandAnalysis, summarizeCompany, type CrawledPage,
 } from '@mh/core';
 import { authenticate, badRequest, requireRole } from '../http';
@@ -35,7 +35,8 @@ export async function onboardingRoutes(app: FastifyInstance) {
       } catch (err) {
         if (!body.description.trim()) throw badRequest((err as Error).message);
       }
-      await prisma.brandProfile.update({ where: { id: 'brand' }, data: { website: body.url } });
+      const brand = await brandProfile();
+      await prisma.brandProfile.update({ where: { id: brand.id }, data: { website: body.url } });
     }
     if (body.description.trim()) {
       await saveManualSource('In your words: what the company does', body.description);
@@ -62,9 +63,10 @@ export async function onboardingRoutes(app: FastifyInstance) {
 
 /** Keeps the user's own descriptions in the Knowledge Base as editable text sources (one per title). */
 export async function saveManualSource(title: string, content: string): Promise<void> {
-  const existing = await prisma.source.findFirst({ where: { kind: 'MANUAL', title } });
+  const organizationId = await getDefaultOrgId();
+  const existing = await prisma.source.findFirst({ where: { kind: 'MANUAL', title, organizationId } });
   const s = existing
     ? await prisma.source.update({ where: { id: existing.id }, data: { content, status: 'PENDING' } })
-    : await prisma.source.create({ data: { kind: 'MANUAL', title, content } });
-  await enqueue('scrape-source', { sourceId: s.id });
+    : await prisma.source.create({ data: { kind: 'MANUAL', title, content, organizationId } });
+  await enqueue('scrape-source', { orgId: organizationId, sourceId: s.id });
 }

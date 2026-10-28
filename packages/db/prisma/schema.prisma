@@ -9,6 +9,11 @@ datasource db {
   extensions = [vector]
 }
 
+// TENANCY: User, Invite, QuickLink, AppSetting, Library, LibraryImport, ScanLease, Asset,
+// AssetProduct, Board, Stage, TaskCategory, Task, ActivityEvent, Notification, ScheduleEvent,
+// BrandFile, ContentDoc, Design, Campaign, Post, PostVariant, SocialAccount and OAuthState
+// are still global. Add organizationId to each before a second company uses this database.
+
 // ---------------------------------------------------------------------------
 // Users, auth, preferences
 // ---------------------------------------------------------------------------
@@ -90,6 +95,7 @@ model Library {
   assets      Asset[]
   lease       ScanLease?
   imports     LibraryImport[]
+  holds       LibraryHold[]
 }
 
 enum LibraryImportKind {
@@ -106,6 +112,18 @@ model LibraryImport {
   relPath   String
   kind      LibraryImportKind
   addedById String
+  createdAt DateTime          @default(now())
+
+  @@unique([libraryId, relPath])
+}
+
+/// A file or folder the team can browse but AI must not read or place in generated work.
+model LibraryHold {
+  id        String            @id @default(cuid())
+  libraryId String
+  library   Library           @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  relPath   String
+  kind      LibraryImportKind
   createdAt DateTime          @default(now())
 
   @@unique([libraryId, relPath])
@@ -148,6 +166,8 @@ model Asset {
   missing      Boolean                @default(false)
   /// Removed from the library on purpose. Scans leave the file on the drive and do not index it again.
   excluded     Boolean                @default(false)
+  /// Still shown in the library. Vision, embeddings, product matching, and generated graphics skip it.
+  notForPublicUse Boolean             @default(false)
   needsTagging Boolean                @default(true)
   indexedAt    DateTime               @default(now())
   products     AssetProduct[]
@@ -206,6 +226,8 @@ model Task {
   description String         @default("")
   order       Float          @default(0)
   dueDate     DateTime?
+  /// Archived tasks stay in the database and drop off the board.
+  active      Boolean        @default(true)
   assigneeId  String?
   assignee    User?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   creatorId   String
@@ -268,23 +290,48 @@ model ScheduleEvent {
 // Knowledge base
 // ---------------------------------------------------------------------------
 
-/// Singleton row (id = "brand").
+/// One company today. A second row exists only in tests; there is no org switcher.
+model Organization {
+  id                String             @id @default(cuid())
+  name              String
+  slug              String             @unique
+  createdAt         DateTime           @default(now())
+  brandProfile      BrandProfile?
+  products          Product[]
+  accomplishments   Accomplishment[]
+  sources           Source[]
+  chunks            KnowledgeChunk[]
+  promptTemplates   PromptTemplate[]
+  claims            Claim[]
+  confidentialTerms ConfidentialTerm[]
+  integrations      IntegrationSetting[]
+}
+
+enum Sensitivity {
+  PUBLIC
+  INTERNAL
+  RESTRICTED
+}
+
+/// The brand profile for one organization. Look up by organizationId, not a fixed id.
 model BrandProfile {
-  id             String   @id @default("brand")
-  companyName    String   @default("")
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyName    String       @default("")
   /// What the company does; approved during setup and refined as knowledge grows.
-  summary        String   @default("")
-  website        String   @default("")
-  tagline        String   @default("")
-  mission        String   @default("")
-  voice          String   @default("")
-  visualIdentity String   @default("")
-  audience       String   @default("")
-  colors         Json     @default("[]")
-  fonts          Json     @default("[]")
+  summary        String       @default("")
+  website        String       @default("")
+  tagline        String       @default("")
+  mission        String       @default("")
+  voice          String       @default("")
+  visualIdentity String       @default("")
+  audience       String       @default("")
+  colors         Json         @default("[]")
+  fonts          Json         @default("[]")
   dos            String[]
   donts          String[]
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime     @updatedAt
 }
 
 enum BrandFileKind {
@@ -295,6 +342,7 @@ enum BrandFileKind {
   EXPORT
 }
 
+// TENANCY: BrandFile is not org-scoped yet. New knowledge files use orgs/<orgId>/ keys.
 /// Files uploaded to object storage (logos, generated images, exports).
 model BrandFile {
   id         String        @id @default(cuid())
@@ -307,29 +355,55 @@ model BrandFile {
 }
 
 model Product {
-  id          String         @id @default(cuid())
-  name        String
-  sku         String         @default("")
-  description String         @default("")
-  features    String[]
-  url         String         @default("")
-  pricing     String         @default("")
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  sku            String         @default("")
+  description    String         @default("")
+  /// Pack-owned positioning. A connector sync must not overwrite this.
+  positioning    String         @default("")
+  features       String[]
+  /// Copy of pack-owned features so a connector refresh can restore them.
+  packFeatures   String[]       @default([])
+  url            String         @default("")
+  pricing        String         @default("")
   /// Extra pages about the product; each is scraped into a Source linked to this product.
-  links       String[]
-  active      Boolean        @default(true)
+  links          String[]
+  packLinks      String[]       @default([])
+  active         Boolean        @default(true)
+  sensitivity    Sensitivity    @default(PUBLIC)
+  externalKey    String?
+  /// Set when a connector owns or is merged onto this row.
+  connectorKey   String?
+  origin         String         @default("manual")
+  contentHash    String?
+  lastSyncedAt   DateTime?
   /// Mean image embedding of confirmed assets, used for product matching.
-  centroid    Unsupported("vector")?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  assets      AssetProduct[]
+  centroid       Unsupported("vector")?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  assets         AssetProduct[]
+
+  @@unique([organizationId, externalKey])
+  @@unique([organizationId, connectorKey])
+  @@index([organizationId, sku])
 }
 
 model Accomplishment {
-  id          String    @id @default(cuid())
-  title       String
-  date        DateTime?
-  description String    @default("")
-  createdAt   DateTime  @default(now())
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  title          String
+  date           DateTime?
+  description    String       @default("")
+  sensitivity    Sensitivity  @default(PUBLIC)
+  externalKey    String?
+  origin         String       @default("manual")
+  contentHash    String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, externalKey])
 }
 
 enum SourceKind {
@@ -339,6 +413,8 @@ enum SourceKind {
   MANUAL
   /// A past social post pasted in as an example of the brand voice.
   SAMPLE_POST
+  /// An uploaded or pack-supplied reference document.
+  DOCUMENT
 }
 
 enum SourceStatus {
@@ -348,35 +424,122 @@ enum SourceStatus {
 }
 
 model Source {
-  id            String       @id @default(cuid())
-  url           String?
-  kind          SourceKind
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  url            String?
+  kind           SourceKind
   /// Set for pages scraped from a product's links.
-  productId     String?
+  productId      String?
   /// Platform a SAMPLE_POST was published on, if known.
-  platform      String?
-  title         String       @default("")
-  content       String       @default("")
-  status        SourceStatus @default(PENDING)
-  error         String?
-  recrawlDays   Int?
-  lastCrawledAt DateTime?
-  createdAt     DateTime     @default(now())
+  platform       String?
+  title          String       @default("")
+  content        String       @default("")
+  status         SourceStatus @default(PENDING)
+  error          String?
+  sensitivity    Sensitivity  @default(PUBLIC)
+  externalKey    String?
+  origin         String       @default("manual")
+  contentHash    String?
+  recrawlDays    Int?
+  lastCrawledAt  DateTime?
+  createdAt      DateTime     @default(now())
 
+  @@unique([organizationId, externalKey])
   @@index([productId])
+  @@index([organizationId, kind])
 }
 
 /// Embedded text chunks used for retrieval-augmented generation.
 model KnowledgeChunk {
-  id         String                 @id @default(cuid())
-  /// BRAND | PRODUCT | ACCOMPLISHMENT | SOURCE
-  sourceType String
-  sourceId   String
-  text       String
-  embedding  Unsupported("vector")?
-  createdAt  DateTime               @default(now())
+  id             String                 @id @default(cuid())
+  organizationId String
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// BRAND | PRODUCT | ACCOMPLISHMENT | SOURCE | CLAIM
+  sourceType     String
+  sourceId       String
+  text           String
+  sensitivity    Sensitivity            @default(PUBLIC)
+  embedding      Unsupported("vector")?
+  createdAt      DateTime               @default(now())
 
   @@index([sourceType, sourceId])
+  @@index([organizationId, sourceType])
+}
+
+/// Writing instructions selected by platform, content type and pillar. Not retrieved by search.
+model PromptTemplate {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  externalKey    String?
+  name           String
+  platform       String?
+  contentType    String?
+  pillar         String?
+  /// The instructions themselves.
+  body           String
+  hashtagMin     Int?
+  hashtagMax     Int?
+  maxChars       Int?
+  version        Int          @default(1)
+  active         Boolean      @default(true)
+  origin         String       @default("manual")
+  contentHash    String?
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, externalKey])
+  @@index([organizationId, active])
+}
+
+/// Approved public statements and statistics. The only numbers the model may quote.
+model Claim {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  externalKey    String?
+  text           String
+  sourceUrl      String       @default("")
+  asOf           DateTime?
+  expiresAt      DateTime?
+  /// APPROVED | RETIRED
+  status         String       @default("APPROVED")
+  productIds     String[]
+  sensitivity    Sensitivity  @default(PUBLIC)
+  origin         String       @default("manual")
+  contentHash    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, externalKey])
+  @@index([organizationId, status])
+}
+
+/// Names the model must never write: customers, partners and programs under NDA.
+model ConfidentialTerm {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  term           String
+  aliases        String[]
+  note           String       @default("")
+  origin         String       @default("manual")
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, term])
+}
+
+/// Per-org connector config. The secret payload is encrypted with ENCRYPTION_KEY.
+model IntegrationSetting {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId     String
+  enabled         Boolean      @default(false)
+  configEncrypted String
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([organizationId, connectorId])
 }
 
 // ---------------------------------------------------------------------------
@@ -421,10 +584,13 @@ enum CampaignStatus {
   FAILED
 }
 
+// TENANCY: Campaign is not org-scoped yet.
 model Campaign {
   id               String         @id @default(cuid())
   name             String
   brief            String
+  /// Content pillar this campaign is written for. Playbooks are data, not an enum.
+  pillar           String?
   startDate        DateTime
   endDate          DateTime
   postDays         Int[]
@@ -451,9 +617,13 @@ enum PostStatus {
   FAILED
 }
 
+// TENANCY: Post is not org-scoped yet.
 model Post {
   id               String        @id @default(cuid())
   campaignId       String?
+  pillar           String?
+  /// Validator warnings from the last AI draft. Shown, never used to block.
+  aiWarnings       Json          @default("[]")
   campaign         Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   title            String
   body             String
@@ -483,9 +653,11 @@ enum VariantStatus {
 }
 
 /// One per target platform; holds platform-specific copy/graphics and the publish result.
+// TENANCY: PostVariant is not org-scoped yet.
 model PostVariant {
   id          String        @id @default(cuid())
   postId      String
+  aiWarnings  Json          @default("[]")
   post        Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
   platform    String
   body        String

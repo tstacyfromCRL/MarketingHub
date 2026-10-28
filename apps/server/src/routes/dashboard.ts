@@ -14,7 +14,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const doneStage = await prisma.stage.findFirst({ orderBy: { order: 'desc' }, select: { id: true } });
     const [myTasks, upcomingPosts, activity, links, awaitingReview, unread] = await Promise.all([
       prisma.task.findMany({
-        where: { assigneeId: req.user.id, stageId: doneStage ? { not: doneStage.id } : undefined },
+        where: { assigneeId: req.user.id, active: true, stageId: doneStage ? { not: doneStage.id } : undefined },
         include: { stage: true, categories: true },
         orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { updatedAt: 'desc' }],
         take: 10,

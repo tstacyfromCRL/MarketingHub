@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
@@ -12,6 +12,8 @@ let win: BrowserWindow | null = null;
 let pendingDeepLink: string | null = null;
 
 app.setName('Mantis');
+// Windows groups the taskbar button and notifications under this id, so they pick up the mantis icon.
+if (process.platform === 'win32') app.setAppUserModelId('com.marketinghub.desktop');
 // Settings used to live under the old name. Copy them once so a rename does not sign the user out.
 const legacySettings = path.join(app.getPath('appData'), 'Marketing Hub', 'settings.json');
 const mantisSettings = path.join(app.getPath('userData'), 'settings.json');
@@ -56,13 +58,31 @@ if (process.defaultApp && process.argv[1]) {
   app.setAsDefaultProtocolClient(PROTOCOL);
 }
 
+/** Title bar and taskbar use the mantis mark instead of the Electron icon. Windows wants an .ico for the caption. */
+function windowIcon() {
+  // In development Electron's own resources folder is not ours, so the mark lives next to the desktop app.
+  const roots = app.isPackaged ? [process.resourcesPath] : [path.join(__dirname, '../../resources')];
+  for (const root of roots) {
+    for (const name of ['icon.ico', 'icon.png']) {
+      const file = path.join(root, name);
+      if (!fsSync.existsSync(file)) continue;
+      const image = nativeImage.createFromPath(file);
+      if (!image.isEmpty()) return image;
+    }
+  }
+  return undefined;
+}
+
 function createWindow() {
+  const icon = windowIcon();
+  if (!icon) console.error('Mantis window icon was not found; the title bar will keep the Electron icon.');
   win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1100,
     minHeight: 700,
     title: 'Mantis',
+    icon,
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
     webPreferences: {
@@ -73,6 +93,8 @@ function createWindow() {
     },
   });
   setProgressSink(win.webContents);
+  // The caption is created from the Electron executable icon. Apply the mark again once the window handle exists.
+  if (icon) win.once('ready-to-show', () => win?.setIcon(icon));
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
