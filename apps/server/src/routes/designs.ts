@@ -11,6 +11,7 @@ const designListSelect = {
   name: true,
   previewKey: true,
   folderId: true,
+  canvaDesignId: true,
   updatedAt: true,
   createdBy: { select: { id: true, name: true } },
   products: { select: { product: { select: { id: true, name: true } } }, orderBy: { product: { name: 'asc' } } },

@@ -84,6 +84,9 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: optional,
   TIKTOK_CLIENT_KEY: optional,
   TIKTOK_CLIENT_SECRET: optional,
+  /** Canva Connect app. Redirect URL is PUBLIC_API_URL/canva/callback. Return URL is PUBLIC_API_URL/canva/return. */
+  CANVA_CLIENT_ID: optional,
+  CANVA_CLIENT_SECRET: optional,
 
   /** Used only for the default org when no Shopify integration is saved in the app. */
   SHOPIFY_STORE_DOMAIN: optional,

@@ -51,6 +51,7 @@ model User {
   campaigns        Campaign[]
   contentDocs      ContentDoc[]
   socialAccounts   SocialAccount[]
+  canvaAccounts    CanvaAccount[]
 }
 
 /// One-time sign-up code an admin hands to a new team member; the code decides their role.
@@ -626,8 +627,10 @@ model Design {
   name        String
   /// DesignDoc JSON (see @mh/shared design.ts)
   doc         Json
-  previewKey  String?
-  folderId    String?
+  previewKey    String?
+  /// Canva design this graphic edits. The picture stored here is the last export from that design.
+  canvaDesignId String?         @unique
+  folderId      String?
   folder      DesignFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
   createdById String
   createdBy   User            @relation(fields: [createdById], references: [id])
@@ -733,6 +736,22 @@ model PostVariant {
   postedAt    DateTime?
 
   @@unique([postId, platform])
+}
+
+/// One Canva login for the team. Tokens stay encrypted on the server.
+model CanvaAccount {
+  id              String   @id @default(cuid())
+  canvaUserId     String   @unique
+  teamId          String?
+  displayName     String
+  /// AES-256-GCM encrypted
+  accessTokenEnc  String
+  refreshTokenEnc String
+  expiresAt       DateTime
+  connectedById   String
+  connectedBy     User     @relation(fields: [connectedById], references: [id], onDelete: Restrict)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model SocialAccount {

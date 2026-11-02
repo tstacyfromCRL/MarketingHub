@@ -24,6 +24,7 @@ import { designRoutes } from './routes/designs';
 import { postRoutes } from './routes/posts';
 import { campaignRoutes } from './routes/campaigns';
 import { socialRoutes } from './routes/social';
+import { canvaRoutes } from './routes/canva';
 import { adminRoutes } from './routes/admin';
 import { onboardingRoutes } from './routes/onboarding';
 import { promptRoutes } from './routes/prompt';
@@ -76,6 +77,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(postRoutes);
   await app.register(campaignRoutes);
   await app.register(socialRoutes);
+  await app.register(canvaRoutes);
   await app.register(adminRoutes);
   await app.register(onboardingRoutes);
   await app.register(promptRoutes);

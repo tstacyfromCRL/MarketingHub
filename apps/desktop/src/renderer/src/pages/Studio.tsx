@@ -8,6 +8,7 @@ import { formatDate, fromLocalInput } from '../lib/format';
 import { useProducts } from '../lib/hooks';
 import type { Asset, Post } from '../lib/types';
 import { Button, Card, Empty, ErrorText, Field, PageHeader, Spinner, Tabs } from '../components/ui';
+import { CanvaGraphicModal } from '../components/Canva';
 
 type Tab = 'post' | 'write' | 'designs';
 
@@ -253,6 +254,7 @@ type Graphic = {
   name: string;
   previewKey: string | null;
   folderId: string | null;
+  canvaDesignId: string | null;
   updatedAt: string;
   createdBy: { name: string };
   products: { product: { id: string; name: string } }[];
@@ -271,6 +273,7 @@ function Designs() {
   const [folderName, setFolderName] = useState('');
   const [productId, setProductId] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [canvaOpen, setCanvaOpen] = useState(false);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['designs'] });
     void queryClient.invalidateQueries({ queryKey: ['design-folders'] });
@@ -330,6 +333,7 @@ function Designs() {
             </>
           )}
           <Button onClick={start}><Plus className="h-4 w-4" /> Open editor</Button>
+          <Button variant="secondary" onClick={() => setCanvaOpen(true)}>New from Canva</Button>
         </div>
       </Card>
       <div className="flex flex-wrap items-center gap-2">
@@ -383,6 +387,9 @@ function Designs() {
               </div>
               <div className="p-3">
                 <Link to={`/designs/${graphic.id}`} className="block truncate text-sm hover:underline">{graphic.name}</Link>
+                {graphic.canvaDesignId && (
+                  <button type="button" className="mt-1 text-xs text-sage hover:underline" onClick={() => void api.post<{ url: string }>(`/canva/graphics/${graphic.id}/edit`).then((result) => window.api.app.openExternal(result.url)).catch((err) => setNotice(errorMessage(err)))}>Edit in Canva</button>
+                )}
                 <div className="text-xs text-slate-500">{graphic.createdBy.name} · {formatDate(graphic.updatedAt)}</div>
                 {graphic.products.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
@@ -398,6 +405,7 @@ function Designs() {
           ))}
         </div>
       )}
+      {canvaOpen && <CanvaGraphicModal folderId={folder === 'all' || folder === 'unfiled' ? null : folder} onClose={(message) => { setCanvaOpen(false); if (message) setNotice(message); }} />}
     </div>
   );
 }

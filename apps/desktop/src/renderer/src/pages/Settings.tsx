@@ -10,6 +10,7 @@ import { useUsers, type TeamUser } from '../lib/hooks';
 import { BrandMark } from '../components/BrandMark';
 import { Badge, Button, Card, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui';
 import { LibraryLocation } from '../components/LibraryLocation';
+import { CanvaAccountCard } from '../components/Canva';
 import { WorkLogPage } from './WorkLog';
 
 export function SettingsPage() {
@@ -131,6 +132,7 @@ function Social() {
   return (
     <div className="space-y-4">
       {mode === 'ayrshare' && <p className="rounded-md bg-sky-950/50 px-3 py-2 text-sm text-sky-200">Publishing goes through Ayrshare. Link social profiles in your Ayrshare dashboard; connections below are optional.</p>}
+      <CanvaAccountCard />
       {waiting && <p className="text-sm text-slate-400">Finish signing in in your browser. This list refreshes automatically.</p>}
       <ErrorText error={error} />
       {platforms.data.map((p) => {

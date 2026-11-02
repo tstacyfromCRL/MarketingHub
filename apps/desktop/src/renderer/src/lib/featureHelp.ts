@@ -38,7 +38,7 @@ const tasks: FeatureHelp = {
 const studio: FeatureHelp = {
   title: 'Content',
   purpose: 'Content is where you draft one post, email, blog, or documentation page.',
-  how: 'Write a short brief, choose the products it is about, and generate a draft. Edit the words, read any warnings, and send it on for approval. Open an existing draft to keep working. On Graphics, select several graphics to delete them, put them in a folder, or tag them with a product. Deleting a folder leaves the graphics under Unfiled. A graphic on a scheduled or posted item stays.',
+  how: 'Write a short brief, choose the products it is about, and generate a draft. Edit the words, read any warnings, and send it on for approval. Open an existing draft to keep working. On Graphics, select several graphics to delete them, put them in a folder, or tag them with a product. Deleting a folder leaves the graphics under Unfiled. A graphic on a scheduled or posted item stays. New from Canva opens a brand template, or a blank design, in Canva. A chosen photo is placed in the image frame when that frame is marked as a data field. Edit in Canva brings the finished picture back.',
   why: 'The draft starts from your brand and knowledge base instead of a blank page.',
 };
 
@@ -199,7 +199,7 @@ const settingsGeneral: FeatureHelp = {
 const settingsSocial: FeatureHelp = {
   title: 'Social accounts',
   purpose: 'Social accounts are the connections used to publish.',
-  how: 'A manager connects each network the team posts to. Until an account is connected, a post can be approved and scheduled, but it will not go out.',
+  how: 'A manager connects each network the team posts to. Until an account is connected, a post can be approved and scheduled, but it will not go out. Canva is connected on this same screen. The server needs the Canva app id and secret first.',
   why: 'Publishing stays tied to the company’s own accounts, and only a manager sets that up.',
 };
 

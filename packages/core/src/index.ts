@@ -28,6 +28,8 @@ export * from './designs';
 export * from './designLibrary';
 export * from './posts';
 export * from './social';
+export * from './canvaConnect';
+export * from './canva';
 export * from './publish';
 export * from './prompt';
 export * from './campaigns';
