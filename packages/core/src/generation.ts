@@ -10,6 +10,7 @@ import {
   type Layer,
   type Platform,
 } from '@mh/shared';
+import sharp from 'sharp';
 import { config } from './config';
 import { generateImage, generateText, parseJson } from './ai/providers';
 import { validateOutput, type OutputWarning } from './ai/validate';
@@ -17,6 +18,8 @@ import { brandProfile, retrieve, type RetrievedChunk } from './knowledge';
 import { getDefaultOrgId } from './org';
 import { selectPlaybook } from './playbooks';
 import { newStorageKey, storage } from './storage';
+import { bannerOverlaySvg, photoPlacement, sampleFrame } from './graphicFrame';
+import { colorThemes, graphicColors, imageInstruction } from './visualIdentity';
 
 export interface BrandContext {
   system: string;
@@ -27,6 +30,7 @@ export interface BrandContext {
   bodyFont: string;
   productNames: string[];
   productSkus: string[];
+  visualIdentity: string;
   claims: string[];
   confidential: string[];
   donts: string[];
@@ -129,6 +133,7 @@ export async function buildBrandContext(orgId: string, brief: string, productIds
     bodyFont: brand.fonts.find((f) => /body|text/i.test(f.role))?.family ?? brand.fonts[0]?.family ?? 'Arial',
     productNames: products.map((p) => p.name),
     productSkus: products.flatMap((p) => [p.sku, ...p.partNumbers]).filter(Boolean),
+    visualIdentity: brand.visualIdentity,
     claims: [...new Set(claimTexts)],
     confidential: terms.map((term) => ({ term: term.term, aliases: term.aliases })).flatMap((term) => [term.term, ...term.aliases]),
     donts: brand.donts,
@@ -268,7 +273,8 @@ export async function generatePostIdeas(input: { orgId?: string; brief: string; 
         knowledgeBlock(ctx.facts),
         claimBlock(ctx.claims),
         `Campaign brief: ${input.brief}`,
-        'For each post give: title (internal, short), body (the post copy with hashtags), headline (max 8 words, for the graphic), subline (max 14 words), imagePrompt (a photographic/illustrative scene description for an image generator, no text in the image).',
+        'For each post give: title (internal, short), body (the post copy with hashtags), headline (max 8 words, for the graphic), subline (max 14 words), imagePrompt (a scene for an image generator, no text in the image).',
+        ctx.visualIdentity && `The imagePrompt must fit this visual identity. Do not describe a look it rejects.\n${ctx.visualIdentity}`,
         'Respond as JSON: {"posts": [{"title","body","headline","subline","imagePrompt"}]}',
       ].filter(Boolean).join('\n\n'),
       mock: () =>
@@ -303,15 +309,46 @@ export async function generatePostIdeas(input: { orgId?: string; brief: string; 
   return ideas;
 }
 
+/** The newest example posts. More than four makes the image request large without adding much style. */
+const STYLE_EXAMPLE_LIMIT = 4;
+
 /** Generates an image, stores it, and records it as a GENERATED brand file. Returns the storage key. */
-export async function generateAndStoreImage(prompt: string, width: number, height: number, palette: string[] = []): Promise<string> {
+export async function generateAndStoreImage(prompt: string, width: number, height: number, palette: string[] = [], hasProduct = false): Promise<string> {
   const brand = await brandProfile();
-  const fullPrompt = [prompt, brand.visualIdentity && `Visual style: ${brand.visualIdentity}`, 'No text, letters or logos in the image.'].filter(Boolean).join('. ');
-  const png = await generateImage(fullPrompt, width, height, palette);
+  const references = await styleReferenceImages();
+  // Example pictures show the look, but the written identity wins when they disagree.
+  const styleNote = references.length
+    ? 'The attached images are examples of our social posts. Follow them only where they agree with the visual identity. Do not copy their words, logos, or products.'
+    : '';
+  const colors = graphicColors(brand.visualIdentity, palette, hasProduct);
+  const theme = colorThemes(brand.visualIdentity).find((item) => item.name === colors.themeName) ?? null;
+  const fullPrompt = imageInstruction({
+    scene: prompt,
+    visualIdentity: brand.visualIdentity,
+    colors: brand.colors.map((color) => ({ name: color.name, hex: color.hex })),
+    theme,
+    styleNote,
+  });
+  const png = await generateImage(fullPrompt, width, height, palette, references);
   const key = newStorageKey('generated', 'png');
   await storage.put(key, png, 'image/png');
   await prisma.brandFile.create({ data: { kind: 'GENERATED', name: prompt.slice(0, 80), storageKey: key, mime: 'image/png', size: png.length } });
   return key;
+}
+
+/** Raster copies of the example posts saved on the brand profile. A file that is not a picture is skipped. */
+async function styleReferenceImages(): Promise<Buffer[]> {
+  const files = await prisma.brandFile.findMany({ where: { kind: 'STYLE' }, orderBy: { createdAt: 'desc' }, take: STYLE_EXAMPLE_LIMIT });
+  const images: Buffer[] = [];
+  for (const file of files) {
+    try {
+      const raw = await storage.get(file.storageKey);
+      images.push(await sharp(raw).resize(1024, 1024, { fit: 'inside', withoutEnlargement: true }).png().toBuffer());
+    } catch {
+      // A missing or unreadable file should not stop the graphic.
+    }
+  }
+  return images;
 }
 
 export interface ComposeInput {
@@ -335,26 +372,33 @@ export async function composeDesign(input: ComposeInput): Promise<{ doc: DesignD
   const W = input.sizeOverride?.width ?? preset.width;
   const H = input.sizeOverride?.height ?? preset.height;
   const ctx = await buildBrandContext(await getDefaultOrgId(), input.headline);
-  const primary = ctx.palette[0] ?? '#1e293b';
-  const accent = ctx.palette[1] ?? '#f59e0b';
+  const hasProduct = Boolean(input.productImageKey);
+  // The type field uses the theme's main color. The first brand swatch is often the accent.
+  const colors = graphicColors(ctx.visualIdentity, ctx.palette, hasProduct);
+  const primary = colors.band;
+  const accent = colors.accent;
   const layers: Layer[] = [];
   const base = { rotation: 0, opacity: 1, visible: true, locked: false };
+  // Sample posts are full-bleed photos over a dark banner. Without those pictures, keep the simpler frame.
+  const styled = (await prisma.brandFile.count({ where: { kind: 'STYLE' } })) > 0;
 
   let backgroundKey = input.backgroundKey;
-  if (!backgroundKey && input.imagePrompt) {
-    backgroundKey = await generateAndStoreImage(input.imagePrompt, W, H, ctx.palette);
+  if (!styled && !backgroundKey && input.imagePrompt) {
+    backgroundKey = await generateAndStoreImage(input.imagePrompt, W, H, ctx.palette, hasProduct);
   }
-  if (backgroundKey) {
+  if (!styled && backgroundKey) {
     layers.push({ ...base, id: newLayerId(), name: 'AI Image', type: 'image', src: backgroundKey, x: 0, y: 0, width: W, height: H, fit: 'cover', role: 'generated' });
   }
 
   const portrait = H > W * 1.1;
-  const bandH = Math.round(H * (portrait ? 0.32 : 0.38));
+  const bandH = styled ? sampleFrame(W, H).bandH : Math.round(H * (portrait ? 0.32 : 0.38));
   const bandY = H - bandH;
-  layers.push({ ...base, id: newLayerId(), name: 'Color Band', type: 'rect', x: 0, y: bandY, width: W, height: bandH, fill: primary, opacity: 0.88, cornerRadius: 0, strokeWidth: 0 });
-  layers.push({ ...base, id: newLayerId(), name: 'Accent Bar', type: 'rect', x: Math.round(W * 0.06), y: bandY - 6, width: Math.round(W * 0.18), height: 12, fill: accent, cornerRadius: 6, strokeWidth: 0 });
+  if (!styled) {
+    layers.push({ ...base, id: newLayerId(), name: 'Color Band', type: 'rect', x: 0, y: bandY, width: W, height: bandH, fill: primary, opacity: 0.88, cornerRadius: 0, strokeWidth: 0 });
+    layers.push({ ...base, id: newLayerId(), name: 'Accent Bar', type: 'rect', x: Math.round(W * 0.06), y: bandY - 6, width: Math.round(W * 0.18), height: 12, fill: accent, cornerRadius: 6, strokeWidth: 0 });
+  }
 
-  if (input.productImageKey) {
+  if (!styled && input.productImageKey) {
     const size = Math.round(Math.min(W, H) * 0.42);
     layers.push({
       ...base, id: newLayerId(), name: 'Product', type: 'image', src: input.productImageKey,
@@ -363,6 +407,40 @@ export async function composeDesign(input: ComposeInput): Promise<{ doc: DesignD
   }
 
   const logo = await prisma.brandFile.findFirst({ where: { kind: 'LOGO' }, orderBy: { createdAt: 'desc' } });
+  const frame = sampleFrame(W, H);
+  if (styled) {
+    if (input.productImageKey) {
+      const photo = await placedPhoto(input.productImageKey, { x: 0, y: 0, width: W, height: bandY });
+      if (photo) layers.push({ ...base, id: newLayerId(), name: 'Product', type: 'image', src: input.productImageKey, ...photo, role: 'product' });
+    } else if (input.imagePrompt || backgroundKey) {
+      if (!backgroundKey && input.imagePrompt) backgroundKey = await generateAndStoreImage(input.imagePrompt, W, H, ctx.palette, hasProduct);
+      if (backgroundKey) layers.push({ ...base, id: newLayerId(), name: 'AI Image', type: 'image', src: backgroundKey, x: 0, y: 0, width: W, height: H, fit: 'cover', role: 'generated' });
+    }
+    layers.push({ ...base, id: newLayerId(), name: 'Color Band', type: 'rect', x: 0, y: frame.bandY, width: W, height: frame.bandH, fill: primary, opacity: 1, cornerRadius: 0, strokeWidth: 0 });
+    const patternKey = newStorageKey('generated', 'png');
+    const pattern = await sharp(Buffer.from(bannerOverlaySvg(W, frame.bandH, frame.peak, accent))).png().toBuffer();
+    await storage.put(patternKey, pattern, 'image/png');
+    layers.push({
+      ...base, id: newLayerId(), name: 'Pattern', type: 'image', src: patternKey,
+      x: 0, y: frame.bandY - frame.peak, width: W, height: frame.bandH + frame.peak, fit: 'fill', role: 'other',
+    });
+    if (logo) {
+      layers.push({ ...base, id: newLayerId(), name: 'Logo Plate', type: 'rect', ...frame.logo, fill: colors.text, cornerRadius: 0, strokeWidth: 0 });
+      layers.push({ ...base, id: newLayerId(), name: 'Logo', type: 'image', src: logo.storageKey, ...frame.logo, fit: 'contain', role: 'logo' });
+    }
+    layers.push({
+      ...base, id: newLayerId(), name: 'Headline', type: 'text', text: input.headline.toUpperCase(),
+      ...frame.headline, fontFamily: ctx.headingFont, fontWeight: 'bold', italic: false, color: colors.text, align: 'left', lineHeight: 1.05,
+    });
+    if (input.subline) {
+      layers.push({
+        ...base, id: newLayerId(), name: 'Subline', type: 'text', text: input.subline,
+        ...frame.subline, fontFamily: ctx.bodyFont, fontWeight: 'normal', italic: false, color: colors.text, align: 'left', lineHeight: 1.2,
+      });
+    }
+    return { doc: { version: 1, width: W, height: H, background: colors.background, layers }, backgroundKey };
+  }
+
   if (logo) {
     const lw = Math.round(W * 0.18);
     layers.push({ ...base, id: newLayerId(), name: 'Logo', type: 'image', src: logo.storageKey, x: Math.round(W * 0.05), y: Math.round(H * 0.05), width: lw, height: Math.round(lw * 0.5), fit: 'contain', role: 'logo' });
@@ -373,16 +451,26 @@ export async function composeDesign(input: ComposeInput): Promise<{ doc: DesignD
   layers.push({
     ...base, id: newLayerId(), name: 'Headline', type: 'text', text: input.headline,
     x: pad, y: bandY + Math.round(bandH * 0.14), width: W - pad * 2, height: Math.round(bandH * 0.5),
-    fontFamily: ctx.headingFont, fontSize: headSize, fontWeight: 'bold', italic: false, color: '#ffffff', align: 'left', lineHeight: 1.15,
+    fontFamily: ctx.headingFont, fontSize: headSize, fontWeight: 'bold', italic: false, color: colors.text, align: 'left', lineHeight: 1.15,
   });
   if (input.subline) {
     const subSize = Math.round(headSize * 0.48);
     layers.push({
       ...base, id: newLayerId(), name: 'Subline', type: 'text', text: input.subline,
       x: pad, y: bandY + Math.round(bandH * 0.66), width: W - pad * 2, height: Math.round(bandH * 0.3),
-      fontFamily: ctx.bodyFont, fontSize: subSize, fontWeight: 'normal', italic: false, color: '#e2e8f0', align: 'left', lineHeight: 1.25,
+      fontFamily: ctx.bodyFont, fontSize: subSize, fontWeight: 'normal', italic: false, color: colors.text, align: 'left', lineHeight: 1.25,
     });
   }
 
-  return { doc: { version: 1, width: W, height: H, background: primary, layers }, backgroundKey };
+  return { doc: { version: 1, width: W, height: H, background: colors.background, layers }, backgroundKey };
+}
+
+/** A library photo above the banner. Missing bytes are skipped so the rest of the graphic still builds. */
+async function placedPhoto(key: string, area: { x: number; y: number; width: number; height: number }) {
+  try {
+    const meta = await sharp(await storage.get(key)).metadata();
+    return photoPlacement(area, { width: meta.width ?? area.width, height: meta.height ?? area.height });
+  } catch {
+    return photoPlacement(area, { width: area.width, height: area.height });
+  }
 }

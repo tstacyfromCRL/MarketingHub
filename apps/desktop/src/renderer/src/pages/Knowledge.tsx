@@ -8,6 +8,7 @@ import { formatDate } from '../lib/format';
 import { isManager, useSession } from '../lib/session';
 import type { KnowledgeSource } from '../lib/types';
 import { Badge, Button, Card, ChipInput, Empty, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui';
+import { BrandFileUploader } from '../components/BrandKit';
 import { ClaimsTab, ConfidentialTab, DocumentsTab, IntegrationsTab, KnowledgeProductsTab, PackTab, PlaybooksTab } from './KnowledgeSystem';
 
 const TABS = [
@@ -65,7 +66,7 @@ function ProductRedirect() {
 // Company profile
 // ---------------------------------------------------------------------------
 
-type Profile = Pick<BrandProfileInput, 'companyName' | 'website' | 'summary' | 'tagline' | 'mission' | 'audience' | 'voice' | 'dos' | 'donts'>;
+type Profile = Pick<BrandProfileInput, 'companyName' | 'website' | 'summary' | 'tagline' | 'mission' | 'audience' | 'voice' | 'visualIdentity' | 'dos' | 'donts'>;
 
 function ProfileTab() {
   const { user } = useSession();
@@ -73,7 +74,7 @@ function ProfileTab() {
   const [b, setB] = useState<Profile | null>(null);
   const [proposal, setProposal] = useState<CompanySummary | null>(null);
   useEffect(() => {
-    if (data) setB({ companyName: data.companyName, website: data.website, summary: data.summary, tagline: data.tagline, mission: data.mission, audience: data.audience, voice: data.voice, dos: data.dos, donts: data.donts });
+    if (data) setB({ companyName: data.companyName, website: data.website, summary: data.summary, tagline: data.tagline, mission: data.mission, audience: data.audience, voice: data.voice, visualIdentity: data.visualIdentity, dos: data.dos, donts: data.donts });
   }, [data]);
   const save = useMutation({
     mutationFn: () => api.patch<BrandProfileInput>('/brand', b),
@@ -112,6 +113,14 @@ function ProfileTab() {
           </Field>
           <Field label="Always do"><ChipInput value={b.dos} onChange={(v) => set('dos', v)} /></Field>
           <Field label="Never do"><ChipInput value={b.donts} onChange={(v) => set('donts', v)} /></Field>
+        </div>
+      </Card>
+      <Card title="How posts should look">
+        <Field label="Appearance" hint="Layout, photography, color, and what to leave out. This is the same visual identity as Brand kit, and it is added to every generated image. Save profile to keep this text.">
+          <textarea className="input" rows={4} value={b.visualIdentity} onChange={(e) => set('visualIdentity', e.target.value)} />
+        </Field>
+        <div className="mt-4">
+          <BrandFileUploader kind="STYLE" accept="image/png,image/jpeg,image/webp" hint="Drop past post graphics. The four newest are sent with each new image as style examples. Pictures save when you drop them." />
         </div>
       </Card>
       <div className="flex items-center justify-end gap-3">

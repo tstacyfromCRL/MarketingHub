@@ -38,7 +38,7 @@ const tasks: FeatureHelp = {
 const studio: FeatureHelp = {
   title: 'Content',
   purpose: 'Content is where you draft one post, email, blog, or documentation page.',
-  how: 'Write a short brief, choose the products it is about, and generate a draft. Edit the words, read any warnings, and send it on for approval. Open an existing draft to keep working.',
+  how: 'Write a short brief, choose the products it is about, and generate a draft. Edit the words, read any warnings, and send it on for approval. Open an existing draft to keep working. On Graphics, select several graphics to delete them, put them in a folder, or tag them with a product. Deleting a folder leaves the graphics under Unfiled. A graphic on a scheduled or posted item stays.',
   why: 'The draft starts from your brand and knowledge base instead of a blank page.',
 };
 
@@ -86,9 +86,9 @@ const library: FeatureHelp = {
 
 const brandKit: FeatureHelp = {
   title: 'Brand kit',
-  purpose: 'The brand kit holds the logos, colors, and fonts.',
-  how: 'Add logo files, enter the brand colors, and set the fonts graphics should use.',
-  why: 'Generated pictures can follow the brand without someone restyling each one.',
+  purpose: 'The brand kit holds the logos, colors, fonts, and visual identity.',
+  how: 'Add logo files, backgrounds, and patterns or overlays. Enter the brand colors and set the fonts. In the graphics editor, use Background, Overlay, Logo, and Image to place the ones you want.',
+  why: 'You pick the pieces of each graphic instead of asking the generator to invent the layout.',
 };
 
 const products: FeatureHelp = {
@@ -108,8 +108,8 @@ const analytics: FeatureHelp = {
 const knowledgeBrand: FeatureHelp = {
   title: 'Brand profile',
   purpose: 'The brand profile is who the company is, in words the AI uses every time.',
-  how: 'Fill in the company name, summary, audience, voice, and the always and never lists. Save when you are done.',
-  why: 'This is the voice added to every draft. Facts come from the other knowledge tabs. This tab is the personality.',
+  how: 'Fill in the company name, summary, audience, voice, and the always and never lists. Under How posts should look, describe the appearance and drop pictures of past posts. Save when the words are done. The pictures save as you add them.',
+  why: 'The voice is added to every draft. The appearance text leads new graphics, including their colors when it names a 60-30-10 theme. Example pictures set the frame: photo, banner, accent, and logo. Facts come from the other knowledge tabs.',
 };
 
 const playbooks: FeatureHelp = {

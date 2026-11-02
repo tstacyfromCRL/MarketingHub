@@ -47,12 +47,12 @@ export async function knowledgeRoutes(app: FastifyInstance) {
 
   // ---- Brand files (logos, graphics, fonts) ----
   app.get<{ Querystring: { kind?: string } }>('/brand/files', async (req) =>
-    prisma.brandFile.findMany({ where: { kind: (req.query.kind as never) || { in: ['LOGO', 'GRAPHIC', 'FONT'] } }, orderBy: { createdAt: 'desc' }, take: 200 }),
+    prisma.brandFile.findMany({ where: { kind: (req.query.kind as never) || { in: ['LOGO', 'GRAPHIC', 'FONT', 'STYLE', 'BACKGROUND'] } }, orderBy: { createdAt: 'desc' }, take: 200 }),
   );
 
   app.post<{ Querystring: { kind?: string } }>('/brand/files', async (req) => {
     const kind = (req.query.kind ?? 'GRAPHIC').toUpperCase();
-    if (!['LOGO', 'GRAPHIC', 'FONT'].includes(kind)) throw badRequest('kind must be LOGO, GRAPHIC or FONT');
+    if (!['LOGO', 'GRAPHIC', 'FONT', 'STYLE', 'BACKGROUND'].includes(kind)) throw badRequest('kind must be LOGO, GRAPHIC, FONT, STYLE, or BACKGROUND');
     const file = await req.file();
     if (!file) throw badRequest('No file uploaded');
     let buf = await file.toBuffer();
@@ -66,7 +66,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     const key = newStorageKey(`brand/${kind.toLowerCase()}`, ext);
     await storage.put(key, buf, mime);
     const row = await prisma.brandFile.create({ data: { kind: kind as never, name: file.filename, storageKey: key, mime, size: buf.length } });
-    await recordEvent({ actorId: req.user.id, verb: 'upload', entityType: 'brandFile', entityId: row.id, summary: `${kind.toLowerCase()} "${file.filename}" uploaded by ${req.user.name}`, link: '/brand-kit' });
+    await recordEvent({ actorId: req.user.id, verb: 'upload', entityType: 'brandFile', entityId: row.id, summary: `${kind === 'STYLE' ? 'Example post' : kind.toLowerCase()} "${file.filename}" uploaded by ${req.user.name}`, link: kind === 'STYLE' ? '/knowledge/profile' : '/brand-kit' });
     return row;
   });
 

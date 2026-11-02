@@ -1,20 +1,109 @@
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
+import { z } from 'zod';
 import { prisma } from '@mh/db';
 import { composeDesignSchema, designSchema, EXPORT_FORMATS, type ExportFormat } from '@mh/shared';
-import { composeDesign, newStorageKey, recordEvent, renderDesignFile, saveDesign, storage } from '@mh/core';
+import { addedProductIds, composeDesign, newStorageKey, partitionDesignDeletion, recordEvent, renderDesignFile, saveDesign, storage } from '@mh/core';
 import { authenticate, badRequest, forbidden, isManager } from '../http';
+
+const designListSelect = {
+  id: true,
+  name: true,
+  previewKey: true,
+  folderId: true,
+  updatedAt: true,
+  createdBy: { select: { id: true, name: true } },
+  products: { select: { product: { select: { id: true, name: true } } }, orderBy: { product: { name: 'asc' } } },
+} as const;
+
+const idsSchema = z.object({
+  ids: z.array(z.string()).min(1).max(200),
+});
 
 export async function designRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
+  app.get('/design-folders', async () =>
+    prisma.designFolder.findMany({ orderBy: { name: 'asc' } }),
+  );
+
+  app.post('/design-folders', async (req) => {
+    const body = z.object({ name: z.string().trim().min(1).max(80) }).parse(req.body);
+    const folder = await prisma.designFolder.create({ data: { name: body.name } });
+    await recordEvent({ actorId: req.user.id, verb: 'create', entityType: 'designFolder', entityId: folder.id, summary: `Folder "${folder.name}" created by ${req.user.name}`, link: '/studio?tab=designs' });
+    return folder;
+  });
+
+  app.delete<{ Params: { id: string } }>('/design-folders/:id', async (req) => {
+    // The folder relation sets each graphic's folder to empty. The graphics stay.
+    const folder = await prisma.designFolder.delete({ where: { id: req.params.id } });
+    await recordEvent({ actorId: req.user.id, verb: 'delete', entityType: 'designFolder', entityId: folder.id, summary: `Folder "${folder.name}" removed by ${req.user.name}`, link: '/studio?tab=designs' });
+    return { ok: true };
+  });
+
   app.get('/designs', async () =>
     prisma.design.findMany({
-      select: { id: true, name: true, previewKey: true, updatedAt: true, createdBy: { select: { id: true, name: true } } },
+      select: designListSelect,
       orderBy: { updatedAt: 'desc' },
       take: 200,
     }),
   );
+
+  app.post('/designs/bulk-delete', async (req) => {
+    const { ids } = idsSchema.parse(req.body);
+    const rows = await prisma.design.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        previewKey: true,
+        posts: { select: { status: true } },
+        variants: { select: { post: { select: { status: true } } } },
+      },
+    });
+    const statuses = (row: (typeof rows)[number]) => [
+      ...row.posts.map((post) => post.status),
+      ...row.variants.map((variant) => variant.post.status),
+    ];
+    const { deleteIds, kept } = partitionDesignDeletion(rows.map((row) => ({ id: row.id, statuses: statuses(row) })));
+    if (deleteIds.length) {
+      await prisma.design.deleteMany({ where: { id: { in: deleteIds } } });
+      for (const row of rows) {
+        if (deleteIds.includes(row.id) && row.previewKey) await storage.delete(row.previewKey).catch(() => undefined);
+      }
+      await recordEvent({ actorId: req.user.id, verb: 'delete', entityType: 'design', entityId: deleteIds[0], summary: `${deleteIds.length} graphic${deleteIds.length === 1 ? '' : 's'} deleted by ${req.user.name}`, link: '/studio?tab=designs' });
+    }
+    return { deleted: deleteIds, kept: rows.filter((row) => kept.includes(row.id)).map((row) => row.name) };
+  });
+
+  app.patch('/designs/organize', async (req) => {
+    const body = z.object({
+      ids: z.array(z.string()).min(1).max(200),
+      folderId: z.string().nullable().optional(),
+      addProductIds: z.array(z.string()).max(50).optional(),
+      removeProductIds: z.array(z.string()).max(50).optional(),
+    }).parse(req.body);
+    if (body.folderId) await prisma.designFolder.findUniqueOrThrow({ where: { id: body.folderId } });
+    if (body.folderId !== undefined) {
+      await prisma.design.updateMany({ where: { id: { in: body.ids } }, data: { folderId: body.folderId } });
+    }
+    if (body.removeProductIds?.length) {
+      await prisma.designProduct.deleteMany({ where: { designId: { in: body.ids }, productId: { in: body.removeProductIds } } });
+    }
+    if (body.addProductIds?.length) {
+      const products = await prisma.product.findMany({ where: { id: { in: body.addProductIds } }, select: { id: true } });
+      const existing = await prisma.designProduct.findMany({
+        where: { designId: { in: body.ids } },
+        select: { designId: true, productId: true },
+      });
+      const rows = body.ids.flatMap((designId) => {
+        const have = existing.filter((row) => row.designId === designId).map((row) => row.productId);
+        return addedProductIds(have, products.map((product) => product.id)).map((productId) => ({ designId, productId }));
+      });
+      if (rows.length) await prisma.designProduct.createMany({ data: rows, skipDuplicates: true });
+    }
+    return { ok: true };
+  });
 
   app.get<{ Params: { id: string } }>('/designs/:id', async (req) => prisma.design.findUniqueOrThrow({ where: { id: req.params.id } }));
 

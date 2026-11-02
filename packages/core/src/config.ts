@@ -53,7 +53,7 @@ const schema = z.object({
   IMAGE_EMBED_PROVIDER: z.enum(['histogram', 'clip']).default('histogram'),
   OPENAI_API_KEY: optional,
   OPENAI_TEXT_MODEL: z.string().default('gpt-4o'),
-  OPENAI_IMAGE_MODEL: z.string().default('gpt-image-1'),
+  OPENAI_IMAGE_MODEL: z.string().default('gpt-image-2.5-sunburst'),
   OPENAI_EMBED_MODEL: z.string().default('text-embedding-3-small'),
   ANTHROPIC_API_KEY: optional,
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5'),

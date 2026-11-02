@@ -341,6 +341,10 @@ enum BrandFileKind {
   FONT
   GENERATED
   EXPORT
+  /// A past social graphic. Sent with new images so they can follow its look.
+  STYLE
+  /// A full-frame plate chosen in the graphics editor.
+  BACKGROUND
 }
 
 // TENANCY: BrandFile is not org-scoped yet. New knowledge files use orgs/<orgId>/ keys.
@@ -392,6 +396,7 @@ model Product {
   updatedAt      DateTime       @updatedAt
   assets         AssetProduct[]
   marketLinks    MarketLink[]
+  designTags     DesignProduct[]
 
   @@unique([organizationId, externalKey])
   @@unique([organizationId, connectorKey])
@@ -597,18 +602,42 @@ model ContentDoc {
   updatedAt   DateTime    @updatedAt
 }
 
+/// A folder in the content studio. Deleting the folder unfiles its graphics; it does not delete them.
+model DesignFolder {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  designs   Design[]
+}
+
+/// A product tag on a graphic. The graphic can carry more than one product.
+model DesignProduct {
+  designId  String
+  productId String
+  design    Design  @relation(fields: [designId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([designId, productId])
+  @@index([productId])
+}
+
 model Design {
-  id          String        @id @default(cuid())
+  id          String          @id @default(cuid())
   name        String
   /// DesignDoc JSON (see @mh/shared design.ts)
   doc         Json
   previewKey  String?
+  folderId    String?
+  folder      DesignFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
   createdById String
-  createdBy   User          @relation(fields: [createdById], references: [id])
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
   posts       Post[]
   variants    PostVariant[]
+  products    DesignProduct[]
+
+  @@index([folderId])
 }
 
 enum CampaignStatus {

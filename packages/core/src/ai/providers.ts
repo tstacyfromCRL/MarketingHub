@@ -245,18 +245,29 @@ export function parseJson<T>(text: string): T {
 // Images
 // ---------------------------------------------------------------------------
 
-/** Generates an image and crops it to exactly width x height. */
-export async function generateImage(prompt: string, width: number, height: number, palette: string[] = []): Promise<Buffer> {
+/**
+ * Generates an image and crops it to exactly width x height.
+ * Example images, when present, go to the edits endpoint so the new picture can follow their look
+ * instead of being invented from the sentence alone.
+ */
+export async function generateImage(prompt: string, width: number, height: number, palette: string[] = [], references: Buffer[] = []): Promise<Buffer> {
   let raw: Buffer;
   if (config.AI_IMAGE_PROVIDER === 'openai') {
     if (!config.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
     const ratio = width / height;
     const size = ratio > 1.2 ? '1536x1024' : ratio < 0.83 ? '1024x1536' : '1024x1024';
-    const res = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.OPENAI_IMAGE_MODEL, prompt, size, n: 1 }),
-    });
+    const examples = references.slice(0, 4);
+    const res = examples.length > 0
+      ? await fetch('https://api.openai.com/v1/images/edits', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${config.OPENAI_API_KEY}` },
+          body: exampleImageForm(prompt, size, examples),
+        })
+      : await fetch('https://api.openai.com/v1/images/generations', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${config.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: config.OPENAI_IMAGE_MODEL, prompt, size, n: 1 }),
+        });
     if (!res.ok) throw new Error(`OpenAI image error ${res.status}: ${await res.text()}`);
     const data = (await res.json()) as { data: { b64_json?: string; url?: string }[] };
     const item = data.data[0];
@@ -265,6 +276,19 @@ export async function generateImage(prompt: string, width: number, height: numbe
     raw = await mockImage(prompt, width, height, palette);
   }
   return sharp(raw).resize(width, height, { fit: 'cover' }).png().toBuffer();
+}
+
+/** Multipart body for a style-reference edit. The pictures are examples, and the prompt says what to make. */
+function exampleImageForm(prompt: string, size: string, references: Buffer[]): FormData {
+  const form = new FormData();
+  form.set('model', config.OPENAI_IMAGE_MODEL);
+  form.set('prompt', prompt);
+  form.set('size', size);
+  form.set('n', '1');
+  references.forEach((image, index) => {
+    form.append('image[]', new File([new Uint8Array(image)], `example-${index}.png`, { type: 'image/png' }));
+  });
+  return form;
 }
 
 async function mockImage(prompt: string, width: number, height: number, palette: string[]): Promise<Buffer> {

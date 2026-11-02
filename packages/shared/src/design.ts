@@ -86,3 +86,32 @@ export function newLayerId(): string {
   counter = (counter + 1) % 1e6;
   return `L${Date.now().toString(36)}${counter.toString(36)}`;
 }
+
+/**
+ * A background sits at the back and replaces the previous one, so picking another plate
+ * does not leave the old plate underneath. An overlay covers the canvas and stays in front.
+ */
+export function placeBrandPiece(doc: DesignDoc, piece: { src: string; name: string; slot: 'background' | 'overlay' }): { doc: DesignDoc; layerId: string } {
+  const layerId = newLayerId();
+  const layer: ImageLayer = {
+    id: layerId,
+    name: piece.name,
+    type: 'image',
+    src: piece.src,
+    fit: 'cover',
+    role: piece.slot === 'background' ? 'background' : 'other',
+    x: 0,
+    y: 0,
+    width: doc.width,
+    height: doc.height,
+    rotation: 0,
+    opacity: 1,
+    visible: true,
+    locked: false,
+  };
+  if (piece.slot === 'background') {
+    const rest = doc.layers.filter((item) => !(item.type === 'image' && item.role === 'background'));
+    return { doc: { ...doc, layers: [layer, ...rest] }, layerId };
+  }
+  return { doc: { ...doc, layers: [...doc.layers, layer] }, layerId };
+}

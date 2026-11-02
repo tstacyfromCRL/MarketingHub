@@ -7,7 +7,7 @@ import {
   ArrowDown, ArrowLeft, ArrowUp, Circle, Download, Eye, EyeOff, ImagePlus, Library, Lock, Redo2, Save, Sparkles, Square, Trash2, Type, Undo2, Unlock, Wand2,
 } from 'lucide-react';
 import {
-  EXPORT_FORMATS, PLATFORMS, PLATFORM_PRESETS, newLayerId, type BrandProfileInput, type DesignDoc, type ExportFormat, type ImageLayer, type Layer, type Platform,
+  EXPORT_FORMATS, PLATFORMS, PLATFORM_PRESETS, newLayerId, placeBrandPiece, type BrandProfileInput, type DesignDoc, type ExportFormat, type ImageLayer, type Layer, type Platform,
 } from '@mh/shared';
 import { api, download, errorMessage, fileUrl, queryClient } from '../lib/api';
 import type { Asset, Design } from '../lib/types';
@@ -68,7 +68,7 @@ export function DesignEditorPage() {
   const [future, setFuture] = useState<DesignDoc[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [modal, setModal] = useState<'ai-image' | 'library' | 'logo' | 'compose' | null>(null);
+  const [modal, setModal] = useState<'ai-image' | 'library' | 'logo' | 'background' | 'overlay' | 'compose' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -235,8 +235,10 @@ export function DesignEditorPage() {
           <ImagePlus className="h-4 w-4" /> Upload
           <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadImage(f).catch((err) => setError(errorMessage(err))); e.target.value = ''; }} />
         </label>
-        <Button variant="ghost" size="sm" onClick={() => setModal('library')}><Library className="h-4 w-4" /> Library</Button>
+        <Button variant="ghost" size="sm" onClick={() => setModal('background')}>Background</Button>
+        <Button variant="ghost" size="sm" onClick={() => setModal('overlay')}>Overlay</Button>
         <Button variant="ghost" size="sm" onClick={() => setModal('logo')}>Logo</Button>
+        <Button variant="ghost" size="sm" onClick={() => setModal('library')}><Library className="h-4 w-4" /> Image</Button>
         <Button variant="ghost" size="sm" onClick={() => setModal('ai-image')}><Sparkles className="h-4 w-4" /> AI image</Button>
         <Button variant="ghost" size="sm" onClick={() => setModal('compose')}><Wand2 className="h-4 w-4" /> AI layout</Button>
         <div className="flex-1" />
@@ -259,7 +261,9 @@ export function DesignEditorPage() {
         else placeImage(key, doc.width, doc.height, 'generated', 'AI image');
       }} />}
       {modal === 'library' && <LibraryPickModal onClose={() => setModal(null)} onPick={(key, w, h, label) => { setModal(null); placeImage(key, w, h, 'product', label); }} />}
-      {modal === 'logo' && <LogoPickModal onClose={() => setModal(null)} onPick={(key, w, h) => { setModal(null); placeImage(key, w, h, 'logo', 'Logo'); }} />}
+      {modal === 'background' && <BrandFileModal kind="BACKGROUND" title="Choose a background" empty="Upload backgrounds on Brand kit." onClose={() => setModal(null)} onPick={(key, name) => { setModal(null); const placed = placeBrandPiece(doc, { src: key, name, slot: 'background' }); setDoc(placed.doc); setSelected(placed.layerId); }} />}
+      {modal === 'overlay' && <BrandFileModal kind="GRAPHIC" title="Choose an overlay" empty="Upload patterns and overlays on Brand kit." onClose={() => setModal(null)} onPick={(key, name) => { setModal(null); const placed = placeBrandPiece(doc, { src: key, name, slot: 'overlay' }); setDoc(placed.doc); setSelected(placed.layerId); }} />}
+      {modal === 'logo' && <BrandFileModal kind="LOGO" title="Choose a logo" empty="Upload logos on Brand kit." onClose={() => setModal(null)} onPick={(key, _name, w, h) => { setModal(null); placeImage(key, w, h, 'logo', 'Logo'); }} />}
       {modal === 'compose' && <ComposeModal doc={doc} onClose={() => setModal(null)} onDoc={(d) => { setModal(null); setDoc(d); }} />}
     </div>
   );
@@ -545,7 +549,7 @@ function LibraryPickModal({ onClose, onPick }: { onClose: () => void; onPick: (k
     }
   };
   return (
-    <Modal open onClose={onClose} title="Place from asset library" width="max-w-3xl">
+    <Modal open onClose={onClose} title="Choose an image" width="max-w-3xl">
       <input className="input mb-3" placeholder="Search..." value={q} onChange={(e) => setQ(e.target.value)} />
       <ErrorText error={error} />
       <div className="mt-2 grid max-h-[60vh] grid-cols-5 gap-2 overflow-y-auto">
@@ -561,21 +565,22 @@ function LibraryPickModal({ onClose, onPick }: { onClose: () => void; onPick: (k
   );
 }
 
-function LogoPickModal({ onClose, onPick }: { onClose: () => void; onPick: (key: string, w: number, h: number) => void }) {
-  const { data } = useQuery({ queryKey: ['brand-files', 'LOGO'], queryFn: () => api.get<{ id: string; name: string; storageKey: string }[]>('/brand/files?kind=LOGO') });
-  const pick = async (key: string) => {
+function BrandFileModal({ kind, title, empty, onClose, onPick }: { kind: 'BACKGROUND' | 'GRAPHIC' | 'LOGO'; title: string; empty: string; onClose: () => void; onPick: (key: string, name: string, w: number, h: number) => void }) {
+  const { data } = useQuery({ queryKey: ['brand-files', kind], queryFn: () => api.get<{ id: string; name: string; storageKey: string }[]>(`/brand/files?kind=${kind}`) });
+  const pick = async (file: { storageKey: string; name: string }) => {
     const img = new window.Image();
-    img.src = fileUrl(key)!;
-    await img.decode();
-    onPick(key, img.naturalWidth || 400, img.naturalHeight || 200);
+    img.src = fileUrl(file.storageKey)!;
+    await img.decode().catch(() => undefined);
+    onPick(file.storageKey, file.name, img.naturalWidth || 400, img.naturalHeight || 200);
   };
   return (
-    <Modal open onClose={onClose} title="Place a logo">
-      {!data?.length ? <p className="text-sm text-slate-500">Upload logos under Knowledge base → Brand.</p> : (
-        <div className="grid grid-cols-3 gap-3">
-          {data.map((f) => (
-            <button key={f.id} onClick={() => void pick(f.storageKey)} className="rounded border border-slate-800 bg-slate-100 p-3 hover:border-indigo-500">
-              <img src={fileUrl(f.storageKey)} className="h-16 w-full object-contain" />
+    <Modal open onClose={onClose} title={title}>
+      {!data?.length ? <p className="text-sm text-slate-500">{empty}</p> : (
+        <div className="grid max-h-[60vh] grid-cols-3 gap-3 overflow-y-auto">
+          {data.map((file) => (
+            <button key={file.id} onClick={() => void pick(file)} className="rounded border border-slate-800 bg-slate-900 p-2 hover:border-indigo-500" title={file.name}>
+              <img src={fileUrl(file.storageKey)} className="h-20 w-full object-contain" />
+              <span className="mt-1 block truncate text-xs text-slate-400">{file.name}</span>
             </button>
           ))}
         </div>

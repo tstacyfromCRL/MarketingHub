@@ -25,6 +25,7 @@ export * from './marketLinks';
 export * from './assets';
 export * from './generation';
 export * from './designs';
+export * from './designLibrary';
 export * from './posts';
 export * from './social';
 export * from './publish';

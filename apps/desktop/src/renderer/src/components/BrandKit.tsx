@@ -9,7 +9,7 @@ import { Button, ErrorText } from './ui';
 
 export interface BrandFile {
   id: string;
-  kind: 'LOGO' | 'GRAPHIC' | 'FONT';
+  kind: 'LOGO' | 'GRAPHIC' | 'FONT' | 'STYLE' | 'BACKGROUND';
   name: string;
   storageKey: string;
   mime: string;

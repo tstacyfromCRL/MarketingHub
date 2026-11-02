@@ -5,6 +5,7 @@ import { assetHiddenFromAi, collapseLibraryImports, resolveLibraryPath, toRelPat
 import { brandColorsSchema, paletteInOrder, toHex } from './colors';
 import { marketLinkSchema, productSchema, taskSchema, taskUpdateSchema } from './api';
 import { isProductDocumentationLink, marketChannel, marketKnowledgeText, productKnowledgeText } from './productKnowledge';
+import { placeBrandPiece, type DesignDoc } from './design';
 
 describe('brand colors', () => {
   it('converts hex, RGB and CMYK to screen hex', () => {
@@ -198,5 +199,29 @@ describe('library drive resolution', () => {
   it('uses a network path directly when the admin picked one without a drive letter', () => {
     const unc = `${share}\\Photos`;
     expect(resolveLibraryPath({ rootPath: unc, uncPath: unc }, [])).toBe(unc);
+  });
+});
+
+describe('placing a brand piece on a graphic', () => {
+  const canvas = (): DesignDoc => ({
+    version: 1,
+    width: 100,
+    height: 80,
+    background: '#111111',
+    layers: [{ id: 'text', name: 'Headline', type: 'text', text: 'Hi', x: 0, y: 0, width: 40, height: 20, rotation: 0, opacity: 1, visible: true, locked: false, fontFamily: 'Arial', fontSize: 12, fontWeight: 'bold', italic: false, color: '#ffffff', align: 'left', lineHeight: 1 }],
+  });
+
+  it('puts a background behind everything and replaces the previous background', () => {
+    const first = placeBrandPiece(canvas(), { src: 'bg-a', name: 'Night', slot: 'background' });
+    const second = placeBrandPiece(first.doc, { src: 'bg-b', name: 'Day', slot: 'background' });
+    expect(second.doc.layers[0]).toMatchObject({ src: 'bg-b', role: 'background', width: 100, height: 80 });
+    expect(second.doc.layers.filter((layer) => layer.type === 'image' && layer.role === 'background')).toHaveLength(1);
+    expect(second.doc.layers.at(-1)?.type).toBe('text');
+  });
+
+  it('covers the canvas with an overlay and leaves it in front', () => {
+    const placed = placeBrandPiece(canvas(), { src: 'pattern', name: 'Cubes', slot: 'overlay' });
+    expect(placed.doc.layers.at(-1)).toMatchObject({ src: 'pattern', role: 'other', x: 0, y: 0, width: 100, height: 80 });
+    expect(placed.layerId).toBe(placed.doc.layers.at(-1)?.id);
   });
 });

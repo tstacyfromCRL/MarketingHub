@@ -216,3 +216,29 @@ describe('cloud and mock providers stay on their own APIs', () => {
     expect(body.messages[1].content[0].image_url.url).toBe(`data:image/png;base64,${png.toString('base64')}`);
   });
 });
+
+/** 1×1 PNG. Sharp has to decode the model response, so the test cannot return arbitrary bytes. */
+const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+describe('image generation', () => {
+  it('asks for a new image when no example is attached', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: TINY_PNG.toString('base64') }] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await loadProviders({ AI_IMAGE_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-test', OPENAI_IMAGE_MODEL: 'gpt-image-2.5-sunburst' });
+    await generateImage('a robot on a concrete floor', 1080, 1080);
+    expect(sent(fetchMock)[0]).toBe('https://api.openai.com/v1/images/generations');
+  });
+
+  it('sends example images to the edits endpoint so the new picture can follow their look', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: TINY_PNG.toString('base64') }] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { generateImage } = await loadProviders({ AI_IMAGE_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-test', OPENAI_IMAGE_MODEL: 'gpt-image-2.5-sunburst' });
+    await generateImage('a robot on a concrete floor', 1080, 1080, [], [Buffer.from('example')]);
+    const [url, init] = sent(fetchMock);
+    expect(url).toBe('https://api.openai.com/v1/images/edits');
+    const form = init.body as FormData;
+    expect(form.get('model')).toBe('gpt-image-2.5-sunburst');
+    expect(String(form.get('prompt'))).toContain('a robot on a concrete floor');
+    expect(form.getAll('image[]')).toHaveLength(1);
+  });
+});

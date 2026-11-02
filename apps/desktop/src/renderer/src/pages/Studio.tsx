@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { FileText, Image as ImageIcon, Plus, Sparkles, Wand2 } from 'lucide-react';
+import { FileText, FolderPlus, Image as ImageIcon, Plus, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import { PLATFORMS, PLATFORM_PRESETS, type ContentType, type Platform } from '@mh/shared';
-import { api, errorMessage, fileUrl } from '../lib/api';
+import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
 import { formatDate, fromLocalInput } from '../lib/format';
 import { useProducts } from '../lib/hooks';
 import type { Asset, Post } from '../lib/types';
@@ -248,16 +248,71 @@ function Writer() {
   );
 }
 
+type Graphic = {
+  id: string;
+  name: string;
+  previewKey: string | null;
+  folderId: string | null;
+  updatedAt: string;
+  createdBy: { name: string };
+  products: { product: { id: string; name: string } }[];
+};
+
 function Designs() {
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery({ queryKey: ['designs'], queryFn: () => api.get<{ id: string; name: string; previewKey: string | null; updatedAt: string; createdBy: { name: string } }[]>('/designs') });
+  const graphics = useQuery({ queryKey: ['designs'], queryFn: () => api.get<Graphic[]>('/designs') });
+  const folders = useQuery({ queryKey: ['design-folders'], queryFn: () => api.get<{ id: string; name: string }[]>('/design-folders') });
+  const products = useProducts();
   const [size, setSize] = useState<Platform | 'custom'>('instagram');
   const [w, setW] = useState(1080);
   const [h, setH] = useState(1080);
+  const [folder, setFolder] = useState('all');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [folderName, setFolderName] = useState('');
+  const [productId, setProductId] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['designs'] });
+    void queryClient.invalidateQueries({ queryKey: ['design-folders'] });
+  };
+  const visible = (graphics.data ?? []).filter((graphic) => folder === 'all' || (folder === 'unfiled' ? !graphic.folderId : graphic.folderId === folder));
+  const allVisible = visible.length > 0 && visible.every((graphic) => selected.has(graphic.id));
   const start = () => {
     const d = size === 'custom' ? { width: w, height: h, label: 'Custom' } : PLATFORM_PRESETS[size];
     navigate(`/designs/new?w=${d.width}&h=${d.height}&name=${encodeURIComponent(`${d.label} graphic`)}`);
   };
+  const toggle = (id: string) => setSelected((cur) => {
+    const next = new Set(cur);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  const showFolder = (id: string) => {
+    setFolder(id);
+    setSelected(new Set());
+    setNotice(null);
+  };
+  const createFolder = useMutation({
+    mutationFn: () => api.post('/design-folders', { name: folderName.trim() }),
+    onSuccess: () => { setFolderName(''); refresh(); },
+  });
+  const deleteFolder = useMutation({
+    mutationFn: (id: string) => api.del(`/design-folders/${id}`),
+    onSuccess: () => { showFolder('all'); refresh(); },
+  });
+  const organize = useMutation({
+    mutationFn: (body: { ids: string[]; folderId?: string | null; addProductIds?: string[]; removeProductIds?: string[] }) => api.patch('/designs/organize', body),
+    onSuccess: () => { setNotice(null); refresh(); },
+  });
+  const remove = useMutation({
+    mutationFn: (ids: string[]) => api.post<{ deleted: string[]; kept: string[] }>('/designs/bulk-delete', { ids }),
+    onSuccess: (result) => {
+      setSelected(new Set());
+      setNotice(result.kept.length ? `Left in place because they are on a scheduled or posted post: ${result.kept.join(', ')}` : null);
+      refresh();
+    },
+  });
+  const ids = [...selected];
   return (
     <div className="space-y-6">
       <Card title="New graphic">
@@ -277,18 +332,69 @@ function Designs() {
           <Button onClick={start}><Plus className="h-4 w-4" /> Open editor</Button>
         </div>
       </Card>
-      {isLoading ? <Spinner /> : !data?.length ? <Empty>No graphics yet.</Empty> : (
+      <div className="flex flex-wrap items-center gap-2">
+        {[['all', 'All graphics'], ['unfiled', 'Unfiled']].map(([id, label]) => (
+          <button key={id} type="button" onClick={() => showFolder(id)} className={`rounded-md border px-3 py-1.5 text-sm ${folder === id ? 'border-sage text-sage' : 'border-slate-700 text-slate-300'}`}>{label}</button>
+        ))}
+        {folders.data?.map((item) => (
+          <span key={item.id} className={`inline-flex items-center rounded-md border ${folder === item.id ? 'border-sage text-sage' : 'border-slate-700 text-slate-300'}`}>
+            <button type="button" onClick={() => showFolder(item.id)} className="px-3 py-1.5 text-sm">{item.name}</button>
+            {folder === item.id && (
+              <button type="button" title="Delete folder" className="pr-2 text-slate-400 hover:text-mist" onClick={() => {
+                if (window.confirm(`Delete folder "${item.name}"? The graphics stay, under Unfiled.`)) deleteFolder.mutate(item.id);
+              }}><Trash2 className="h-3.5 w-3.5" /></button>
+            )}
+          </span>
+        ))}
+        <input className="input w-40" placeholder="New folder" value={folderName} onChange={(e) => setFolderName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && folderName.trim()) createFolder.mutate(); }} />
+        <Button variant="secondary" size="sm" disabled={!folderName.trim()} loading={createFolder.isPending} onClick={() => createFolder.mutate()}><FolderPlus className="h-3.5 w-3.5" /> Create folder</Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" checked={allVisible} onChange={() => setSelected(allVisible ? new Set() : new Set(visible.map((graphic) => graphic.id)))} />
+          {selected.size ? `${selected.size} selected` : 'Select'}
+        </label>
+        <select className="input w-44 py-1 text-sm" value="" disabled={!selected.size || organize.isPending} onChange={(e) => { if (e.target.value) organize.mutate({ ids, folderId: e.target.value === 'unfiled' ? null : e.target.value }); }}>
+          <option value="">Move to folder</option>
+          <option value="unfiled">Unfiled</option>
+          {folders.data?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+        <select className="input w-44 py-1 text-sm" value={productId} onChange={(e) => setProductId(e.target.value)}>
+          <option value="">Product tag</option>
+          {products.data?.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+        </select>
+        <Button variant="secondary" size="sm" disabled={!selected.size || !productId} loading={organize.isPending} onClick={() => organize.mutate({ ids, addProductIds: [productId] })}>Add tag</Button>
+        <Button variant="danger" size="sm" disabled={!selected.size} loading={remove.isPending} onClick={() => {
+          if (window.confirm(`Delete ${selected.size} graphic${selected.size === 1 ? '' : 's'}?`)) remove.mutate(ids);
+        }}><Trash2 className="h-3.5 w-3.5" /> Delete</Button>
+      </div>
+      <ErrorText error={notice ?? (createFolder.error ? errorMessage(createFolder.error) : null) ?? (organize.error ? errorMessage(organize.error) : null) ?? (remove.error ? errorMessage(remove.error) : null) ?? (deleteFolder.error ? errorMessage(deleteFolder.error) : null)} />
+      {graphics.isLoading ? <Spinner /> : !visible.length ? <Empty>{graphics.data?.length ? 'This folder is empty.' : 'No graphics yet.'}</Empty> : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
-          {data.map((d) => (
-            <Link key={d.id} to={`/designs/${d.id}`} className="card overflow-hidden hover:border-slate-600">
-              <div className="flex aspect-square items-center justify-center bg-slate-900">
-                {d.previewKey ? <img src={fileUrl(d.previewKey)} className="max-h-full max-w-full object-contain" /> : <ImageIcon className="h-10 w-10 text-slate-700" />}
+          {visible.map((graphic) => (
+            <div key={graphic.id} className={`card overflow-hidden ${selected.has(graphic.id) ? 'border-sage' : ''}`}>
+              <div className="relative">
+                <label className="absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded bg-slate-950/80">
+                  <input type="checkbox" checked={selected.has(graphic.id)} onChange={() => toggle(graphic.id)} aria-label={`Select ${graphic.name}`} />
+                </label>
+                <Link to={`/designs/${graphic.id}`} className="flex aspect-square items-center justify-center bg-slate-900 hover:opacity-90">
+                  {graphic.previewKey ? <img src={fileUrl(graphic.previewKey)} className="max-h-full max-w-full object-contain" /> : <ImageIcon className="h-10 w-10 text-slate-700" />}
+                </Link>
               </div>
               <div className="p-3">
-                <div className="truncate text-sm">{d.name}</div>
-                <div className="text-xs text-slate-500">{d.createdBy.name} · {formatDate(d.updatedAt)}</div>
+                <Link to={`/designs/${graphic.id}`} className="block truncate text-sm hover:underline">{graphic.name}</Link>
+                <div className="text-xs text-slate-500">{graphic.createdBy.name} · {formatDate(graphic.updatedAt)}</div>
+                {graphic.products.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {graphic.products.map(({ product }) => (
+                      <button key={product.id} type="button" title={`Remove ${product.name}`} className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-700" onClick={() => organize.mutate({ ids: [graphic.id], removeProductIds: [product.id] })}>
+                        {product.name} ×
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

@@ -55,8 +55,9 @@ export function BrandKitPage() {
           </Card>
         </div>
         <div className="space-y-6">
-          <Card title="Logos"><BrandFileUploader kind="LOGO" accept="image/*,.svg" /></Card>
-          <Card title="Brand graphics"><BrandFileUploader kind="GRAPHIC" accept="image/*,.svg" /></Card>
+          <Card title="Logos"><BrandFileUploader kind="LOGO" accept="image/*,.svg" hint="In the graphics editor, Logo places the one you pick." /></Card>
+          <Card title="Backgrounds"><BrandFileUploader kind="BACKGROUND" accept="image/png,image/jpeg,image/webp" hint="Full-frame plates. In the graphics editor, Background places the one you pick behind the other layers." /></Card>
+          <Card title="Patterns and overlays"><BrandFileUploader kind="GRAPHIC" accept="image/*,.svg" hint="Transparent patterns and frames. In the graphics editor, Overlay places the one you pick on top. Move it in the layer list if it should sit under the logo." /></Card>
           <Card title="Font files"><BrandFileUploader kind="FONT" accept=".ttf,.otf,.woff,.woff2" /></Card>
         </div>
       </div>
