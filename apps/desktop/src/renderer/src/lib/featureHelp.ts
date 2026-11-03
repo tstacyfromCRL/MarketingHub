@@ -38,8 +38,8 @@ const tasks: FeatureHelp = {
 const studio: FeatureHelp = {
   title: 'Content',
   purpose: 'Content is where you draft one post, email, blog, or documentation page.',
-  how: 'Write a short brief, choose the products it is about, and generate a draft. Edit the words, read any warnings, and send it on for approval. Open an existing draft to keep working. On Graphics, select several graphics to delete them, put them in a folder, or tag them with a product. Deleting a folder leaves the graphics under Unfiled. A graphic on a scheduled or posted item stays. New from Canva opens a brand template, or a blank design, in Canva. A chosen photo is placed in the image frame when that frame is marked as a data field. Edit in Canva brings the finished picture back.',
-  why: 'The draft starts from your brand and knowledge base instead of a blank page.',
+  how: 'On Social post, describe the idea, then Write with AI for a tagline, sub-tagline, and post copy you can edit. Choose a library photo and a Canva brand template. Create draft & edit in Canva fills the photo plus the first two text fields and opens Canva to refine. Click Return in Canva and the post preview updates to that finished graphic. Approve the draft; a manager schedules it. On Graphics, New from Canva works the same for standalone designs. Emails, blogs, and docs still start from a brief on their own tab.',
+  why: 'The draft starts from your brand and knowledge base, and the graphic is finished in Canva before it is scheduled.',
 };
 
 const post: FeatureHelp = {
@@ -79,15 +79,15 @@ const approvals: FeatureHelp = {
 
 const library: FeatureHelp = {
   title: 'Library',
-  purpose: 'The library is the photos and files the team is allowed to use.',
-  how: 'An admin sets the shared drive once. Import the folders or files you want. Tag a file, assign a product, or mark it Not for public use so the AI skips it. The file stays visible to people, just grayed out. Select an image and choose Use in New Design to place it on a new graphic.',
-  why: 'Files stay on the shared drive. Mantis only indexes what you import, and private files are kept out of generated work.',
+  purpose: 'The library is the photos and files the team is allowed to use, plus uploads from the connected Canva account.',
+  how: 'Shared drive holds the indexed Marketing & Media files. An admin sets that location once. Import the folders or files you want. Tag a file, assign a product, or mark it Not for public use so the AI skips it. The file stays visible to people, just grayed out. Select an image and choose Use in New Design to place it on a new graphic. The Canva tab browses folders and uploaded images from the connected Canva account. Canva does not list videos here yet. A manager connects Canva under Settings → Social accounts.',
+  why: 'Drive files stay on the shared share, and Canva uploads are reachable without leaving Mantis.',
 };
 
 const brandKit: FeatureHelp = {
   title: 'Brand kit',
   purpose: 'The brand kit holds the logos, colors, fonts, and visual identity.',
-  how: 'Add logo files, backgrounds, and patterns or overlays. Enter the brand colors and set the fonts. In the graphics editor, use Background, Overlay, Logo, and Image to place the ones you want.',
+  how: 'Add logo files, backgrounds, and patterns or overlays. Enter the brand colors and set the fonts. In the graphics editor, use Background, Overlay, Logo, and Image to place the ones you want. Export downloads a zip of the saved kit, including the company profile. Import replaces the kit on this computer. Example post pictures are not in the file.',
   why: 'You pick the pieces of each graphic instead of asking the generator to invent the layout.',
 };
 

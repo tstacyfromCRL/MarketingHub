@@ -5,7 +5,7 @@ import { config } from './config';
 /** A message pushed to connected desktop clients. userId '*' = broadcast. */
 export interface RealtimeMessage {
   userId: string | '*';
-  type: 'notification' | 'activity' | 'post' | 'task' | 'campaign' | 'library' | 'onboarding';
+  type: 'notification' | 'activity' | 'post' | 'task' | 'campaign' | 'library' | 'onboarding' | 'design';
   payload: unknown;
 }
 
@@ -17,6 +17,11 @@ local.setMaxListeners(100);
 
 let pub: Redis | null = null;
 let sub: Redis | null = null;
+
+/** The Canva return happens in the browser, so an open Mantis window has to be told to reload the graphic. */
+export function publishDesignUpdate(designId: string): void {
+  bus.publish({ userId: '*', type: 'design', payload: { id: designId } });
+}
 
 /**
  * Realtime fan-out. With Redis configured, messages from the worker process reach the

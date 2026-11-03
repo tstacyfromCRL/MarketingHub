@@ -9,12 +9,60 @@ export const CANVA_SCOPES = [
   'design:meta:read',
   'brandtemplate:meta:read',
   'brandtemplate:content:read',
+  'folder:read',
   'profile:read',
 ].join(' ');
 
 export interface CanvaField {
   name: string;
   type: string;
+}
+
+/** One row from a Canva Projects folder. Videos are omitted because Canva's folder API does not return them yet. */
+export type CanvaLibraryItem =
+  | { type: 'folder'; id: string; name: string; thumbnailUrl: string | null; updatedAt: number | null }
+  | { type: 'image'; id: string; name: string; tags: string[]; thumbnailUrl: string | null; updatedAt: number | null };
+
+type CanvaFolderItemRaw = {
+  type?: string;
+  folder?: { id?: string; name?: string; updated_at?: number; thumbnail?: { url?: string } };
+  image?: {
+    id?: string;
+    name?: string;
+    tags?: string[];
+    updated_at?: number;
+    thumbnail?: { url?: string };
+    type?: string;
+  };
+};
+
+/** Turns Canva's folder listing into the shapes Mantis shows in the Canva library browser. */
+export function normalizeCanvaFolderItems(items: CanvaFolderItemRaw[] | undefined): CanvaLibraryItem[] {
+  const out: CanvaLibraryItem[] = [];
+  for (const item of items ?? []) {
+    if (item.type === 'folder' && item.folder?.id) {
+      out.push({
+        type: 'folder',
+        id: item.folder.id,
+        name: item.folder.name?.trim() || 'Folder',
+        thumbnailUrl: item.folder.thumbnail?.url ?? null,
+        updatedAt: item.folder.updated_at ?? null,
+      });
+      continue;
+    }
+    // Canva documents image uploads under type "image"; skip other asset kinds here.
+    if (item.type === 'image' && item.image?.id) {
+      out.push({
+        type: 'image',
+        id: item.image.id,
+        name: item.image.name?.trim() || 'Upload',
+        tags: Array.isArray(item.image.tags) ? item.image.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+        thumbnailUrl: item.image.thumbnail?.url ?? null,
+        updatedAt: item.image.updated_at ?? null,
+      });
+    }
+  }
+  return out;
 }
 
 /** PKCE S256 challenge. Canva's authorize URL expects the lowercase method name s256. */
@@ -35,20 +83,24 @@ export function canvaAuthorizeUrl(input: { clientId: string; redirectUri: string
 }
 
 /**
- * Fill the first text field and the first image field on a brand template.
+ * Fill the first text field (tagline), the second text field (sub-tagline), and the first image field.
  * Other fields keep the template's own defaults.
  */
-export function canvaAutofillData(fields: CanvaField[], input: { headline?: string; assetId?: string }): Record<string, { type: string; text?: string; asset_id?: string }> {
+export function canvaAutofillData(
+  fields: CanvaField[],
+  input: { headline?: string; subline?: string; assetId?: string },
+): Record<string, { type: string; text?: string; asset_id?: string }> {
   const data: Record<string, { type: string; text?: string; asset_id?: string }> = {};
-  const text = fields.find((field) => field.type.toLowerCase() === 'text');
+  const texts = fields.filter((field) => field.type.toLowerCase() === 'text');
   const image = fields.find((field) => field.type.toLowerCase() === 'image');
-  if (text && input.headline) data[text.name] = { type: 'text', text: input.headline };
+  if (texts[0] && input.headline) data[texts[0].name] = { type: 'text', text: input.headline };
+  if (texts[1] && input.subline) data[texts[1].name] = { type: 'text', text: input.subline };
   if (image && input.assetId) data[image.name] = { type: 'image', asset_id: input.assetId };
   return data;
 }
 
 /** A template is autofilled only when it has a field we can fill. Otherwise it is copied as-is. */
-export function canvaTemplateUsesAutofill(fields: CanvaField[], input: { headline?: string; assetId?: string }): boolean {
+export function canvaTemplateUsesAutofill(fields: CanvaField[], input: { headline?: string; subline?: string; assetId?: string }): boolean {
   return Object.keys(canvaAutofillData(fields, input)).length > 0;
 }
 

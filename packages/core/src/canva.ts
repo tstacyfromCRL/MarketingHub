@@ -1,7 +1,10 @@
 import { prisma } from '@mh/db';
 import { config } from './config';
 import { decrypt, encrypt, randomToken } from './crypto';
-import { canvaAutofillData, canvaAuthorizeUrl, canvaEditLink, canvaMissingImageFrame, canvaTemplateUsesAutofill, verifyCanvaReturnJwt, type CanvaField } from './canvaConnect';
+import {
+  canvaAutofillData, canvaAuthorizeUrl, canvaEditLink, canvaMissingImageFrame, canvaTemplateUsesAutofill,
+  normalizeCanvaFolderItems, verifyCanvaReturnJwt, type CanvaField, type CanvaLibraryItem,
+} from './canvaConnect';
 
 const API = 'https://api.canva.com/rest/v1';
 
@@ -81,12 +84,15 @@ export async function finishCanvaConnect(code: string, state: string): Promise<{
 export async function canvaStatus() {
   const account = await prisma.canvaAccount.findFirst({
     orderBy: { updatedAt: 'desc' },
-    select: { id: true, displayName: true, connectedBy: { select: { name: true } } },
+    select: { id: true, displayName: true, updatedAt: true, connectedBy: { select: { name: true } } },
   });
   return {
     configured: canvaConfigured(),
     connected: Boolean(account),
-    account: account ? { id: account.id, displayName: account.displayName, connectedBy: account.connectedBy.name } : null,
+    // updatedAt changes on every successful connect/reconnect so the Settings card can stop waiting.
+    account: account
+      ? { id: account.id, displayName: account.displayName, connectedBy: account.connectedBy.name, updatedAt: account.updatedAt.toISOString() }
+      : null,
   };
 }
 
@@ -144,6 +150,72 @@ export async function listCanvaTemplates(): Promise<{ id: string; title: string;
   return (body.items ?? []).map((item) => ({ id: item.id, title: item.title, thumbnailUrl: item.thumbnail?.url ?? null }));
 }
 
+/** Browses one Canva Projects folder. Pass `root` for the top level. Thumbnails expire after about 15 minutes. */
+export async function listCanvaFolderItems(input: {
+  folderId?: string;
+  continuation?: string;
+  limit?: number;
+} = {}): Promise<{ items: CanvaLibraryItem[]; continuation: string | null }> {
+  const token = await accessToken();
+  const folderId = (input.folderId?.trim() || 'root');
+  const params = new URLSearchParams({
+    limit: String(Math.min(100, Math.max(1, input.limit ?? 50))),
+    item_types: 'folder,image',
+    sort_by: 'modified_descending',
+  });
+  if (input.continuation) params.set('continuation', input.continuation);
+  const body = await canvaFetch(token, 'GET', `/folders/${encodeURIComponent(folderId)}/items?${params}`) as {
+    items?: {
+      type?: string;
+      folder?: { id?: string; name?: string; updated_at?: number; thumbnail?: { url?: string } };
+      image?: { id?: string; name?: string; tags?: string[]; updated_at?: number; thumbnail?: { url?: string } };
+    }[];
+    continuation?: string;
+  };
+  return {
+    items: normalizeCanvaFolderItems(body.items),
+    continuation: body.continuation ?? null,
+  };
+}
+
+/** Fresh metadata and thumbnail for one uploaded Canva image. */
+export async function getCanvaAsset(assetId: string): Promise<{
+  id: string;
+  name: string;
+  type: 'image' | 'video';
+  tags: string[];
+  thumbnailUrl: string | null;
+  width: number | null;
+  height: number | null;
+  updatedAt: number | null;
+}> {
+  const token = await accessToken();
+  const body = await canvaFetch(token, 'GET', `/assets/${encodeURIComponent(assetId)}`) as {
+    asset?: {
+      id?: string;
+      name?: string;
+      type?: string;
+      tags?: string[];
+      updated_at?: number;
+      thumbnail?: { url?: string };
+      metadata?: { width?: number; height?: number };
+    };
+  };
+  const asset = body.asset;
+  if (!asset?.id) throw new CanvaError('That Canva file was not found.');
+  const type = asset.type === 'video' ? 'video' : 'image';
+  return {
+    id: asset.id,
+    name: asset.name?.trim() || 'Upload',
+    type,
+    tags: Array.isArray(asset.tags) ? asset.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+    thumbnailUrl: asset.thumbnail?.url ?? null,
+    width: asset.metadata?.width ?? null,
+    height: asset.metadata?.height ?? null,
+    updatedAt: asset.updated_at ?? null,
+  };
+}
+
 async function uploadAsset(token: string, name: string, bytes: Buffer): Promise<string> {
   const safe = name.replace(/[^\w.\- ]+/g, '').trim().slice(0, 50) || 'image';
   const started = await canvaFetch(token, 'POST', '/asset-uploads', {
@@ -174,7 +246,10 @@ async function exportPng(token: string, canvaDesignId: string): Promise<Buffer> 
 export interface CanvaDraft {
   title: string;
   templateId?: string;
+  /** First text data field on the brand template (tagline). */
   headline?: string;
+  /** Second text data field on the brand template (sub-tagline). */
+  subline?: string;
   image?: { name: string; bytes: Buffer };
   width: number;
   height: number;
@@ -194,8 +269,8 @@ async function designFromTemplate(token: string, draft: CanvaDraft): Promise<{ c
     throw new CanvaError('That template has no image frame set up to take a photo. In Canva, select the image frame, open Apps, search for Bulk Create, choose Labels, and add a data field. Then choose the image again.');
   }
   const assetId = draft.image ? await uploadAsset(token, draft.image.name, draft.image.bytes) : undefined;
-  const data = canvaAutofillData(fields, { headline: draft.headline, assetId });
-  if (!canvaTemplateUsesAutofill(fields, { headline: draft.headline, assetId })) {
+  const data = canvaAutofillData(fields, { headline: draft.headline, subline: draft.subline, assetId });
+  if (!canvaTemplateUsesAutofill(fields, { headline: draft.headline, subline: draft.subline, assetId })) {
     return { canvaDesignId: await copyBrandTemplate(token, templateId, draft.title), filled: false };
   }
   try {

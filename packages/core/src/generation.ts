@@ -162,6 +162,68 @@ function knowledgeBlock(facts: string[]): string {
   return facts.length ? `Company knowledge:\n${facts.map((f) => `- ${f}`).join('\n')}` : 'Company knowledge: (none provided yet)';
 }
 
+export interface SocialDraftParts {
+  title: string;
+  tagline: string;
+  subTagline: string;
+  body: string;
+  warnings: OutputWarning[];
+}
+
+/**
+ * Studio social-post draft: one tagline for the graphic, a sub-tagline under it, and the feed copy.
+ * Returned as separate fields so each can be edited before a Canva template is filled.
+ */
+export async function generateSocialDraft(input: {
+  orgId?: string;
+  brief: string;
+  platform?: Platform;
+  productIds?: string[];
+}): Promise<SocialDraftParts> {
+  const orgId = input.orgId ?? (await getDefaultOrgId());
+  const ctx = await buildBrandContext(orgId, input.brief, input.productIds, input.platform);
+  const playbook = await selectPlaybook(orgId, input.platform, 'SOCIAL_POST');
+  const preset = input.platform ? PLATFORM_PRESETS[input.platform] : null;
+  const limit = playbook?.maxChars ?? preset?.maxChars;
+  const text = await generateText({
+    system: ctx.system,
+    json: true,
+    maxTokens: 1200,
+    prompt: [
+      'Write one social media post as structured JSON for our studio.',
+      playbook?.body,
+      playbook?.hashtagMin != null && `Put between ${playbook.hashtagMin} and ${playbook.hashtagMax ?? playbook.hashtagMin} hashtags at the end of body.`,
+      preset && `Primary platform: ${preset.label}.${limit ? ` Keep body under ${limit} characters.` : ''}`,
+      knowledgeBlock(ctx.facts),
+      claimBlock(ctx.claims),
+      `Brief: ${input.brief}`,
+      'Respond as JSON with keys: title (internal label, short), tagline (max 8 words, on the graphic), subTagline (max 14 words, under the tagline on the graphic), body (the full post copy with hashtags).',
+      'Example shape: {"title":"...","tagline":"...","subTagline":"...","body":"..."}',
+    ].filter(Boolean).join('\n\n'),
+    mock: () => {
+      const product = ctx.productNames[0] ?? ctx.companyName;
+      const body = mockContent('SOCIAL_POST', input.brief, ctx, limit);
+      return JSON.stringify({
+        title: input.brief.slice(0, 60) || `${product} post`,
+        tagline: `${product}`.slice(0, 48),
+        subTagline: input.brief.split(/[.!?\n]/)[0].trim().slice(0, 80) || `See what ${product} can do`,
+        body,
+      });
+    },
+  });
+  const parsed = parseJson<{ title?: string; tagline?: string; subTagline?: string; body?: string }>(text);
+  const body = String(parsed.body ?? '').trim() || mockContent('SOCIAL_POST', input.brief, ctx, limit);
+  const warnings = validateOutput(body, warningContext(ctx, playbook, limit));
+  if (ctx.droppedInternal) warnings.push({ code: 'INTERNAL_OMITTED', message: 'Internal knowledge was left out because this draft used a cloud model.' });
+  return {
+    title: String(parsed.title ?? (input.brief.slice(0, 60) || 'Social post')).trim(),
+    tagline: String(parsed.tagline ?? '').trim(),
+    subTagline: String(parsed.subTagline ?? '').trim(),
+    body,
+    warnings,
+  };
+}
+
 export async function generateContent(input: {
   orgId?: string;
   type: ContentType;

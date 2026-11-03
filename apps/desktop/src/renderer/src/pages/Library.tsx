@@ -7,7 +7,8 @@ import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { useProducts } from '../lib/hooks';
 import type { Asset } from '../lib/types';
-import { Badge, Button, Card, ChipInput, Empty, ErrorText, Field, PageHeader, Spinner } from '../components/ui';
+import { CanvaLibraryBrowser } from '../components/CanvaLibrary';
+import { Badge, Button, Card, ChipInput, Empty, ErrorText, Field, PageHeader, Spinner, Tabs } from '../components/ui';
 import { LibraryLocation } from '../components/LibraryLocation';
 
 interface Stats {
@@ -28,12 +29,46 @@ interface LibraryPath {
 
 export function LibraryPage() {
   const [params, setParams] = useSearchParams();
+  const source = params.get('source') === 'canva' ? 'canva' : 'drive';
+  const stats = useQuery({ queryKey: ['library-stats'], queryFn: () => api.get<Stats | null>('/library/stats') });
+  const [showLocation, setShowLocation] = useState(false);
+  const total = Object.values(stats.data?.byKind ?? {}).reduce((a, b) => a + b, 0);
+
+  return (
+    <div>
+      <PageHeader
+        title="Asset library"
+        subtitle={
+          source === 'canva'
+            ? 'Folders and uploaded images from the connected Canva account.'
+            : stats.data
+              ? `${total.toLocaleString()} files indexed${stats.data.lastScanAt ? ` · last scan ${formatDate(stats.data.lastScanAt)}` : ''}${stats.data.untagged ? ` · ${stats.data.untagged} waiting for AI tagging` : ''}${stats.data.scanning ? ` · ${stats.data.scanning.machine} is scanning now` : ''}`
+              : 'The library has not been set up yet.'
+        }
+        actions={source === 'drive' ? <Button variant="secondary" onClick={() => setShowLocation((s) => !s)}><FolderSearch className="h-4 w-4" /> Library location</Button> : undefined}
+      />
+      <Tabs
+        tabs={[{ id: 'drive', label: 'Shared drive' }, { id: 'canva', label: 'Canva' }]}
+        value={source}
+        onChange={(next) => setParams(next === 'canva' ? { source: 'canva' } : {})}
+      />
+      {source === 'canva' ? <CanvaLibraryBrowser /> : (
+        <>
+          {showLocation && <Card className="mb-4"><LibraryLocation /></Card>}
+          <DriveLibrary />
+        </>
+      )}
+    </div>
+  );
+}
+
+function DriveLibrary() {
+  const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('');
   const [productId, setProductId] = useState('');
   const [untagged, setUntagged] = useState(false);
   const [page, setPage] = useState(1);
-  const [showLocation, setShowLocation] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [importBusy, setImportBusy] = useState<'FOLDER' | 'FILE' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -50,7 +85,6 @@ export function LibraryPage() {
   if (productId) qs.set('productId', productId);
   if (untagged) qs.set('untagged', '1');
 
-  const stats = useQuery({ queryKey: ['library-stats'], queryFn: () => api.get<Stats | null>('/library/stats') });
   const assets = useQuery({
     queryKey: ['assets', qs.toString()],
     queryFn: () => api.get<{ items: Asset[]; total: number; pageSize: number }>(`/library/assets?${qs.toString()}`),
@@ -60,11 +94,16 @@ export function LibraryPage() {
   useEffect(() => setPicked([]), [page, q, kind, productId, untagged]);
   useEffect(() => {
     void window.api.library.scanProgress().then((p) => setScanning(p.state === 'scanning'));
+    let lastUploaded = 0;
     return window.api.library.onProgress((p) => {
       setScanning(p.state === 'scanning');
-      if (p.state === 'done') {
+      // Files land in the DB per batch; refresh the grid while thumbnails are still running.
+      const batchLanded = p.state === 'scanning' && p.uploaded > lastUploaded;
+      if (batchLanded) lastUploaded = p.uploaded;
+      if (batchLanded || p.state === 'done' || p.state === 'error') {
         void queryClient.invalidateQueries({ queryKey: ['assets'] });
         void queryClient.invalidateQueries({ queryKey: ['library-stats'] });
+        void queryClient.invalidateQueries({ queryKey: ['library-imports'] });
       }
     });
   }, []);
@@ -78,6 +117,7 @@ export function LibraryPage() {
       if (result.cancelled) return;
       setNotice(result.warning ?? (result.imported === 0 && !result.error ? 'Those are already in the library.' : null));
       setImportError(result.error ?? null);
+      void queryClient.invalidateQueries({ queryKey: ['library-imports'] });
       if (result.imported > 0) void window.api.library.scan();
     } catch (err) {
       setImportError(errorMessage(err));
@@ -88,24 +128,11 @@ export function LibraryPage() {
 
   const togglePicked = (id: string) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   const pageItems = assets.data?.items ?? [];
-
-  const total = Object.values(stats.data?.byKind ?? {}).reduce((a, b) => a + b, 0);
   const pages = Math.max(1, Math.ceil((assets.data?.total ?? 0) / (assets.data?.pageSize ?? 60)));
 
   return (
     <div className="flex gap-6">
       <div className="min-w-0 flex-1">
-        <PageHeader
-          title="Asset library"
-          subtitle={
-            stats.data
-              ? `${total.toLocaleString()} files indexed${stats.data.lastScanAt ? ` · last scan ${formatDate(stats.data.lastScanAt)}` : ''}${stats.data.untagged ? ` · ${stats.data.untagged} waiting for AI tagging` : ''}${stats.data.scanning ? ` · ${stats.data.scanning.machine} is scanning now` : ''}`
-              : 'The library has not been set up yet.'
-          }
-          actions={<Button variant="secondary" onClick={() => setShowLocation((s) => !s)}><FolderSearch className="h-4 w-4" /> Library location</Button>}
-        />
-        {showLocation && <Card className="mb-4"><LibraryLocation /></Card>}
-
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input className="input max-w-xs" placeholder="Search by file name, tag or description..." value={q} onChange={(e) => setQ(e.target.value)} />
           <select className="input w-36" value={kind} onChange={(e) => setKind(e.target.value)}>
@@ -130,7 +157,7 @@ export function LibraryPage() {
           </Button>
         </div>
         <FolderFlags imports={imports.data ?? []} holds={holds.data ?? []} />
-        {scanning && <p className="mb-3 text-xs text-slate-400">Indexing imported files...</p>}
+        {scanning && <p className="mb-3 text-xs text-slate-400">Indexing imported files… thumbnails can take a while; files should appear here as each batch finishes.</p>}
         {notice && <p className="mb-3 text-sm text-amber-200">{notice}</p>}
         <ErrorText error={importError} />
         {picked.length > 0 && <BatchBar ids={picked} items={pageItems} products={products.data ?? []} onDone={() => setPicked([])} />}

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@mh/db';
-import { contentDocSchema, generateImageSchema, generateTextSchema, paletteInOrder } from '@mh/shared';
-import { brandProfile, generateAndStoreImage, generateContent, recordEvent } from '@mh/core';
+import { contentDocSchema, generateImageSchema, generateSocialDraftSchema, generateTextSchema, paletteInOrder } from '@mh/shared';
+import { brandProfile, generateAndStoreImage, generateContent, generateSocialDraft, recordEvent } from '@mh/core';
 import { authenticate, forbidden, isManager } from '../http';
 
 export async function generationRoutes(app: FastifyInstance) {
@@ -11,6 +11,12 @@ export async function generationRoutes(app: FastifyInstance) {
     const body = generateTextSchema.parse(req.body);
     const result = await generateContent(body);
     return result;
+  });
+
+  // Structured social draft used by Studio → Social post (tagline / sub-tagline / copy).
+  app.post('/generate/social-draft', async (req) => {
+    const body = generateSocialDraftSchema.parse(req.body);
+    return generateSocialDraft(body);
   });
 
   app.post('/generate/image', async (req) => {

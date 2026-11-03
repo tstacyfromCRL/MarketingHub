@@ -1,15 +1,21 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { prisma } from '@mh/db';
 import { SENSITIVITIES, accomplishmentSchema, brandProfileSchema, marketLinkSchema, productSchema, sourceSchema } from '@mh/shared';
 import {
+  BrandKitError,
   MarketLinkError,
   attachMarketLink,
   brandProfile,
   enqueue,
+  exportBrandKit,
   extractText,
   getDefaultOrgId,
+  importBrandKit,
   isLinkedIn,
   newStorageKey,
   recordEvent,
@@ -17,6 +23,8 @@ import {
   removeProductKnowledge,
   retrieve,
   storage,
+  unzipToDirectory,
+  zipDirectory,
 } from '@mh/core';
 import { authenticate, badRequest, requireRole } from '../http';
 
@@ -75,6 +83,42 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     await storage.delete(row.storageKey).catch(() => undefined);
     await recordEvent({ actorId: req.user.id, verb: 'delete', entityType: 'brandFile', entityId: row.id, summary: `"${row.name}" removed from brand files by ${req.user.name}`, link: '/brand-kit' });
     return { ok: true };
+  });
+
+  // A zip of the saved company profile and kit files, so the kit can move to another computer.
+  app.get('/brand/kit/export', async (_req, reply) => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mantis-brand-kit-'));
+    try {
+      const current = await brandProfile();
+      await exportBrandKit(current.organizationId, dir);
+      const zip = await zipDirectory(dir);
+      const filename = `${slugFile(current.companyName)}-brand-kit.zip`;
+      reply.header('Content-Type', 'application/zip');
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      return reply.send(zip);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  app.post('/brand/kit/import', async (req) => {
+    const upload = await req.file();
+    if (!upload) throw badRequest('Upload a brand kit zip');
+    const dir = await mkdtemp(path.join(tmpdir(), 'mantis-brand-kit-'));
+    try {
+      await unzipToDirectory(await upload.toBuffer(), dir);
+      const current = await brandProfile();
+      const result = await importBrandKit(current.organizationId, dir);
+      await enqueue('embed-knowledge', { orgId: current.organizationId, sourceType: 'BRAND', sourceId: current.id });
+      await recordEvent({ actorId: req.user.id, verb: 'import', entityType: 'brand', entityId: current.id, summary: `Brand kit imported by ${req.user.name}`, link: '/brand-kit' });
+      return { ok: true, files: result.files };
+    } catch (err) {
+      if (err instanceof BrandKitError) throw badRequest(err.message);
+      if (err instanceof Error && /zip/i.test(err.message)) throw badRequest(err.message);
+      throw err;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   // ---- Products ----
@@ -337,4 +381,9 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     await recordEvent({ actorId: req.user.id, verb: 'reindex', entityType: 'knowledge', entityId: 'all', summary: `Knowledge base re-index started by ${req.user.name}` });
     return { ok: true };
   });
+}
+
+/** A download name with no spaces or quotes, so the save dialog can use the company name. */
+function slugFile(companyName: string): string {
+  return companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'company';
 }

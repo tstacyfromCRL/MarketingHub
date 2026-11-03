@@ -72,49 +72,113 @@ export function ProductImagePicker({ productId, value, onChange }: { productId: 
   );
 }
 
+type SocialDraft = { title: string; tagline: string; subTagline: string; body: string; warnings: { code: string; message: string }[] };
+
 function NewPost() {
   const navigate = useNavigate();
   const products = useProducts();
-  const [title, setTitle] = useState('');
+  const canva = useQuery({ queryKey: ['canva'], queryFn: () => api.get<{ configured: boolean; connected: boolean }>('/canva/status') });
+  const templates = useQuery({
+    queryKey: ['canva-templates'],
+    queryFn: () => api.get<{ id: string; title: string; thumbnailUrl: string | null }[]>('/canva/templates'),
+    enabled: Boolean(canva.data?.connected),
+  });
   const [brief, setBrief] = useState('');
+  const [title, setTitle] = useState('');
+  const [tagline, setTagline] = useState('');
+  const [subTagline, setSubTagline] = useState('');
   const [body, setBody] = useState('');
   const [warnings, setWarnings] = useState<{ code: string; message: string }[]>([]);
+  const [draftReady, setDraftReady] = useState(false);
   const [productIds, setProductIds] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>(['facebook', 'instagram', 'linkedin']);
-  const [perPlatformFiles, setPerPlatformFiles] = useState(true);
   const [adaptCopy, setAdaptCopy] = useState(true);
-  const [withGraphic, setWithGraphic] = useState(true);
-  const [headline, setHeadline] = useState('');
-  const [subline, setSubline] = useState('');
-  const [imagePrompt, setImagePrompt] = useState('');
+  const [templateId, setTemplateId] = useState('');
   const [assetId, setAssetId] = useState('');
+  const [imageQuery, setImageQuery] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const libraryImages = useQuery({
+    queryKey: ['assets', 'studio-canva', imageQuery, productIds[0] ?? ''],
+    queryFn: () => {
+      const qs = new URLSearchParams({ kind: 'IMAGE', forAi: '1', q: imageQuery });
+      if (productIds[0]) qs.set('productId', productIds[0]);
+      return api.get<{ items: Asset[] }>(`/library/assets?${qs}`);
+    },
+    enabled: draftReady,
+  });
 
   const write = useMutation({
-    mutationFn: () => api.post<{ text: string; warnings: { code: string; message: string }[] }>('/generate/text', { type: 'SOCIAL_POST', brief, productIds, platform: platforms[0] }),
+    mutationFn: () => api.post<SocialDraft>('/generate/social-draft', { brief, productIds, platform: platforms[0] }),
     onSuccess: (r) => {
-      setBody(r.text);
+      setTitle(r.title);
+      setTagline(r.tagline);
+      setSubTagline(r.subTagline);
+      setBody(r.body);
       setWarnings(r.warnings ?? []);
-      if (!title) setTitle(brief.slice(0, 60));
-      if (!headline) setHeadline(brief.split(/[.!?\n]/)[0].slice(0, 60));
+      setDraftReady(true);
+      setError(null);
     },
   });
-  const create = useMutation({
-    mutationFn: () =>
-      api.post<Post>('/posts', {
-        title, body, aiWarnings: warnings, platforms, perPlatformFiles, adaptCopy,
+
+  const createAndOpenCanva = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (!canva.data?.connected) throw new Error('A manager connects Canva under Settings → Social accounts first.');
+      if (!templateId) throw new Error('Choose a Canva brand template.');
+      if (!assetId) throw new Error('Choose a library photo for the template.');
+      // Build the Canva graphic first so a template/photo failure does not leave an empty draft post.
+      let libraryAssetId = assetId;
+      const picked = libraryImages.data?.items.find((item) => item.id === assetId);
+      if (picked && !picked.storedKey) {
+        const uploaded = await window.api.library.upload(picked.id, picked.relPath) as Asset;
+        libraryAssetId = uploaded.id;
+      }
+      const draftTitle = title.trim() || tagline.trim() || 'Social post';
+      const graphic = await api.post<{ id: string; editUrl: string; filled: boolean }>('/canva/graphics', {
+        title: draftTitle,
+        templateId,
+        headline: tagline.trim() || undefined,
+        subline: subTagline.trim() || undefined,
+        libraryAssetId,
+        width: 1080,
+        height: 1350,
+      });
+      const post = await api.post<Post>('/posts', {
+        title: draftTitle,
+        body,
+        aiWarnings: warnings,
+        platforms,
+        perPlatformFiles: false,
+        adaptCopy,
         scheduledAt: fromLocalInput(scheduledAt),
-        graphic: withGraphic && headline ? { headline, subline, imagePrompt: imagePrompt || undefined, productAssetId: assetId || undefined } : undefined,
-      }),
-    onSuccess: (p) => navigate(`/posts/${p.id}`),
-  });
+        designId: graphic.id,
+      });
+      await window.api.app.openExternal(graphic.editUrl);
+      void queryClient.invalidateQueries({ queryKey: ['posts'] });
+      navigate(`/posts/${post.id}`, {
+        state: {
+          notice: graphic.filled
+            ? 'Canva is open with your photo, tagline, and sub-tagline filled in. When you finish, click Return in Canva. This post updates to the finished graphic, then you can approve and schedule it.'
+            : 'That template had no fill-in fields, so Canva opened without changing it. Finish the design, return to Mantis, then approve and schedule this post.',
+        },
+      });
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
       <div className="space-y-6 xl:col-span-3">
-        <Card title="1. Copy">
+        <Card title="1. What is this post about?">
           <div className="space-y-4">
-            <Field label="What's the post about?">
+            <Field label="Brief">
               <textarea className="input" rows={3} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="Announce our booth at the Spring Expo, highlight the new X200 and invite people to stop by." />
             </Field>
             <Field label="Products to feature">
@@ -132,53 +196,95 @@ function NewPost() {
             </Field>
             <Button variant="secondary" onClick={() => write.mutate()} loading={write.isPending} disabled={!brief.trim()}><Sparkles className="h-4 w-4" /> Write with AI</Button>
             <ErrorText error={write.error ? errorMessage(write.error) : null} />
-            <Field label="Title (internal)"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-            <Field label="Post copy" hint={`${body.length} characters`}><textarea className="input" rows={7} value={body} onChange={(e) => setBody(e.target.value)} /></Field>
-            {warnings.length > 0 && (
-              <ul className="space-y-1 rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2">
-                {warnings.map((warning, index) => <li key={index} className="text-xs text-amber-100">{warning.message}</li>)}
-              </ul>
-            )}
           </div>
         </Card>
-        <Card title="2. Graphic">
-          <label className="mb-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={withGraphic} onChange={(e) => setWithGraphic(e.target.checked)} /> Generate an editable, on-brand graphic</label>
-          {withGraphic && (
+
+        <Card title="2. Tagline, sub-tagline & copy">
+          {!draftReady ? (
+            <p className="text-sm text-slate-500">Write with AI first. You can edit every field before the graphic is built.</p>
+          ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Headline"><input className="input" value={headline} onChange={(e) => setHeadline(e.target.value)} /></Field>
-                <Field label="Subline"><input className="input" value={subline} onChange={(e) => setSubline(e.target.value)} /></Field>
-              </div>
-              <Field label="Background image prompt (optional)" hint="Leave empty to use brand colors only."><input className="input" value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} placeholder="Bright modern trade show floor, soft bokeh" /></Field>
-              {productIds[0] && (
-                <Field label="Product photo from the library">
-                  <ProductImagePicker productId={productIds[0]} value={assetId} onChange={setAssetId} />
-                </Field>
+              <Field label="Title (internal)"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
+              <Field label="Tagline" hint="Goes into the first text field on the Canva template.">
+                <input className="input" value={tagline} onChange={(e) => setTagline(e.target.value)} />
+              </Field>
+              <Field label="Sub-tagline" hint="Goes into the second text field on the Canva template.">
+                <input className="input" value={subTagline} onChange={(e) => setSubTagline(e.target.value)} />
+              </Field>
+              <Field label="Post copy" hint={`${body.length} characters`}>
+                <textarea className="input" rows={7} value={body} onChange={(e) => setBody(e.target.value)} />
+              </Field>
+              {warnings.length > 0 && (
+                <ul className="space-y-1 rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2">
+                  {warnings.map((warning, index) => <li key={index} className="text-xs text-amber-100">{warning.message}</li>)}
+                </ul>
               )}
             </div>
           )}
         </Card>
+
+        <Card title="3. Photo & Canva template">
+          {!draftReady ? (
+            <p className="text-sm text-slate-500">After the copy is ready, pick a library photo and a brand template.</p>
+          ) : !canva.data?.configured ? (
+            <p className="text-sm text-slate-500">Canva is not configured on the server yet.</p>
+          ) : !canva.data.connected ? (
+            <p className="text-sm text-slate-500">A manager connects Canva under Settings → Social accounts.</p>
+          ) : (
+            <div className="space-y-4">
+              <Field label="Brand template" hint="The photo fills the image data field. Tagline and sub-tagline fill the first and second text data fields.">
+                <select className="input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+                  <option value="">Choose a template</option>
+                  {templates.data?.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}
+                </select>
+              </Field>
+              {templates.error && <ErrorText error={errorMessage(templates.error)} />}
+              <Field label="Library photo">
+                <input className="input mb-2" placeholder="Search the library" value={imageQuery} onChange={(e) => setImageQuery(e.target.value)} />
+                {productIds[0] && (
+                  <div className="mb-2">
+                    <ProductImagePicker productId={productIds[0]} value={assetId} onChange={setAssetId} />
+                  </div>
+                )}
+                <div className="grid max-h-56 grid-cols-5 gap-2 overflow-y-auto">
+                  {(libraryImages.data?.items ?? []).map((item) => (
+                    <button key={item.id} type="button" onClick={() => setAssetId(item.id)} className={`overflow-hidden rounded border ${assetId === item.id ? 'border-sage' : 'border-slate-800'}`} title={item.relPath}>
+                      {item.thumbnailKey ? <img src={fileUrl(item.thumbnailKey)} className="aspect-square w-full object-cover" /> : <ImageIcon className="m-auto h-8 w-8 text-slate-600" />}
+                    </button>
+                  ))}
+                </div>
+                {!libraryImages.data?.items.length && !libraryImages.isLoading && <p className="mt-2 text-xs text-slate-500">No library images match. Import photos under Library first.</p>}
+              </Field>
+            </div>
+          )}
+        </Card>
       </div>
+
       <div className="space-y-6 xl:col-span-2">
-        <Card title="3. Where & when">
+        <Card title="4. Where & when">
           <div className="space-y-4">
             <Field label="Platforms"><PlatformPicker value={platforms} onChange={setPlatforms} /></Field>
-            <label className="flex items-start gap-2 text-sm">
-              <input type="checkbox" className="mt-1" checked={perPlatformFiles} onChange={(e) => setPerPlatformFiles(e.target.checked)} />
-              <span>Separate graphic for each platform size<span className="block text-xs text-slate-500">Otherwise one graphic is shared across platforms.</span></span>
-            </label>
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-1" checked={adaptCopy} onChange={(e) => setAdaptCopy(e.target.checked)} />
               <span>Tailor copy to each platform<span className="block text-xs text-slate-500">Length limits, hashtags and tone per network.</span></span>
             </label>
-            <Field label="Target publish time (optional)" hint="Final time is set when a manager approves."><input type="datetime-local" className="input" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} /></Field>
+            <Field label="Target publish time (optional)" hint="Final time is set when a manager approves.">
+              <input type="datetime-local" className="input" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
+            </Field>
           </div>
         </Card>
-        <ErrorText error={create.error ? errorMessage(create.error) : null} />
-        <Button className="w-full" onClick={() => create.mutate()} loading={create.isPending} disabled={!title || !body || platforms.length === 0}>
-          <Wand2 className="h-4 w-4" /> Create draft post
+        <ErrorText error={error} />
+        <Button
+          className="w-full"
+          onClick={() => void createAndOpenCanva()}
+          loading={busy}
+          disabled={!draftReady || !title.trim() || !body.trim() || !tagline.trim() || !templateId || !assetId || platforms.length === 0}
+        >
+          <Wand2 className="h-4 w-4" /> Create draft & edit in Canva
         </Button>
-        <p className="text-xs text-slate-500">The draft goes through the approval workflow: you approve it, a manager reviews it, then it's scheduled and posted automatically.</p>
+        <p className="text-xs text-slate-500">
+          Mantis fills the template, opens Canva for you to refine it, then saves the finished graphic when you return. Approve the draft and a manager schedules it.
+        </p>
       </div>
     </div>
   );

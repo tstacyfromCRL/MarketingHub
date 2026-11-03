@@ -44,8 +44,8 @@ const postInclude = {
   creator: { select: { id: true, name: true } },
   reviewer: { select: { id: true, name: true } },
   campaign: { select: { id: true, name: true } },
-  design: { select: { id: true, name: true, previewKey: true } },
-  variants: { include: { design: { select: { id: true, name: true, previewKey: true } } }, orderBy: { platform: 'asc' } },
+  design: { select: { id: true, name: true, previewKey: true, canvaDesignId: true } },
+  variants: { include: { design: { select: { id: true, name: true, previewKey: true, canvaDesignId: true } } }, orderBy: { platform: 'asc' } },
 } satisfies Prisma.PostInclude;
 
 function ctxFor(user: AuthUser, post: { creatorId: string }) {

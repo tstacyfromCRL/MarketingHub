@@ -47,6 +47,7 @@ export interface DesignRef {
   id: string;
   name?: string;
   previewKey: string | null;
+  canvaDesignId?: string | null;
 }
 
 export interface AiWarning {

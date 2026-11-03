@@ -5,7 +5,8 @@ import { prisma } from '@mh/db';
 import { newLayerId, type DesignDoc } from '@mh/shared';
 import {
   CanvaError, canvaEditLink, canvaEditUrl, canvaStatus, createCanvaGraphic, disconnectCanva, finishCanvaConnect,
-  importCanvaReturn, listCanvaTemplates, newStorageKey, recordEvent, saveDesign, startCanvaConnect, storage,
+  getCanvaAsset, importCanvaReturn, listCanvaFolderItems, listCanvaTemplates, newStorageKey, publishDesignUpdate,
+  recordEvent, saveDesign, startCanvaConnect, storage,
 } from '@mh/core';
 import { authenticate, badRequest, requireRole } from '../http';
 
@@ -75,7 +76,10 @@ export async function canvaRoutes(app: FastifyInstance) {
       const key = newStorageKey('canva', 'png');
       await storage.put(key, imported.png, 'image/png');
       await saveDesign({ id: design.id, name: design.name, doc: await pictureDoc(imported.png, key), userId: design.createdById });
-      return page('Saved', 'The graphic in Mantis now shows this Canva design.');
+      // The browser tab that Canva opened cannot refresh the desktop window. This tells it to reload the preview.
+      publishDesignUpdate(design.id);
+      await recordEvent({ actorId: design.createdById, verb: 'update', entityType: 'design', entityId: design.id, summary: `Canva design "${design.name}" saved back to Mantis`, link: `/designs/${design.id}` });
+      return page('Saved', 'Mantis updated this graphic with your finished Canva design.');
     } catch (err) {
       req.log.error(err);
       return page('Could not save', err instanceof Error ? err.message : 'The Canva design could not be saved.');
@@ -109,12 +113,44 @@ export async function canvaRoutes(app: FastifyInstance) {
       }
     });
 
+    // Browse Canva Projects folders and uploaded images (not the shared-drive library).
+    auth.get<{ Params: { folderId: string }; Querystring: { continuation?: string; limit?: string } }>(
+      '/canva/folders/:folderId/items',
+      async (req) => {
+        try {
+          const limit = req.query.limit ? Number(req.query.limit) : undefined;
+          return await listCanvaFolderItems({
+            folderId: req.params.folderId,
+            continuation: req.query.continuation,
+            limit: Number.isFinite(limit) ? limit : undefined,
+          });
+        } catch (err) {
+          // Missing folder:read usually means the account was connected before that scope existed.
+          if (err instanceof CanvaError && /permission|scope|forbidden|folder/i.test(err.message)) {
+            throw badRequest('Canva blocked folder access. A manager should Reconnect Canva in Settings after enabling folder read on the Canva app.');
+          }
+          fail(err);
+        }
+      },
+    );
+
+    auth.get<{ Params: { assetId: string } }>('/canva/assets/:assetId', async (req) => {
+      try {
+        return await getCanvaAsset(req.params.assetId);
+      } catch (err) {
+        fail(err);
+      }
+    });
+
     auth.post('/canva/graphics', async (req) => {
       const body = z.object({
         title: z.string().trim().min(1).max(120),
         templateId: z.string().optional(),
         headline: z.string().max(500).optional(),
+        subline: z.string().max(500).optional(),
         libraryAssetId: z.string().optional(),
+        /** When set, this Canva graphic becomes the post's shared design for scheduling. */
+        postId: z.string().optional(),
         width: z.number().int().min(40).max(8000).default(1080),
         height: z.number().int().min(40).max(8000).default(1080),
         folderId: z.string().nullable().optional(),
@@ -132,6 +168,7 @@ export async function canvaRoutes(app: FastifyInstance) {
           title: body.title,
           templateId: body.templateId,
           headline: body.headline,
+          subline: body.subline,
           image,
           width: body.width,
           height: body.height,
@@ -143,6 +180,12 @@ export async function canvaRoutes(app: FastifyInstance) {
           where: { id: saved.id },
           data: { canvaDesignId: created.canvaDesignId, ...(body.folderId ? { folderId: body.folderId } : {}) },
         });
+        if (body.postId) {
+          const post = await prisma.post.findUnique({ where: { id: body.postId }, select: { id: true } });
+          if (!post) throw badRequest('That post was not found.');
+          await prisma.post.update({ where: { id: post.id }, data: { designId: saved.id } });
+          await prisma.postVariant.updateMany({ where: { postId: post.id }, data: { designId: saved.id } });
+        }
         await recordEvent({ actorId: req.user.id, verb: 'create', entityType: 'design', entityId: saved.id, summary: `Canva graphic "${body.title}" created by ${req.user.name}`, link: `/designs/${saved.id}` });
         return { id: saved.id, editUrl: canvaEditLink(created.editUrl, saved.id), filled: created.filled };
       } catch (err) {

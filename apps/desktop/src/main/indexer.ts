@@ -47,12 +47,18 @@ async function* walk(dir: string): AsyncGenerator<string> {
   }
 }
 
+/** Shell thumbnails for PSDs/videos can hang for minutes; skip after a short wait so the scan keeps moving. */
+const THUMB_MS = 4_000;
+
 async function thumbnail(file: string, kind: AssetKind): Promise<string | undefined> {
   if (kind !== 'IMAGE' && kind !== 'VIDEO') return undefined;
   try {
     // Uses the Windows shell thumbnail provider, so it covers photos, PSDs and videos alike.
-    const img = await nativeImage.createThumbnailFromPath(file, { width: 320, height: 320 });
-    if (img.isEmpty()) return undefined;
+    const img = await Promise.race([
+      nativeImage.createThumbnailFromPath(file, { width: 320, height: 320 }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), THUMB_MS)),
+    ]);
+    if (!img || img.isEmpty()) return undefined;
     return img.toPNG().toString('base64');
   } catch {
     return undefined;
@@ -86,7 +92,8 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
   try {
     const known = new Map<string, { size: number; mtime: number; thumb: boolean }>();
     for (const [rel, size, mtime, thumb] of await api<[string, number, number, boolean][]>('GET', '/library/index')) {
-      known.set(rel, { size, mtime, thumb });
+      // Lower-case keys so Windows path casing drift still counts as "already indexed".
+      known.set(rel.toLowerCase(), { size, mtime, thumb });
     }
     const imports = await api<{ relPath: string; kind: 'FOLDER' | 'FILE' }[]>('GET', '/library/imports');
     const excluded = new Set((await api<string[]>('GET', '/library/exclusions')).map((rel) => rel.toLowerCase()));
@@ -94,10 +101,18 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
     let batch: { relPath: string; size: number; mtime: string; kind: AssetKind; thumbnail?: string }[] = [];
     let lastRenew = Date.now();
 
+    if (imports.length === 0) {
+      // Finish the lease without wiping existing assets (empty seenPaths is ignored server-side).
+      await api('POST', '/library/scan-complete', { leaseToken, seenPaths: [] });
+      emit({ state: 'done', seen: 0, uploaded: 0, message: 'Nothing is imported yet. Import folders or files first.' });
+      return progress;
+    }
+
     const flush = async () => {
       if (batch.length === 0) return;
       await api('POST', '/library/assets/batch', { leaseToken, assets: batch });
-      emit({ uploaded: progress.uploaded + batch.length });
+      // Emit seen with every batch so the UI can refresh while thumbnails are still running.
+      emit({ seen: seen.length, uploaded: progress.uploaded + batch.length });
       batch = [];
       lastRenew = Date.now();
     };
@@ -121,14 +136,14 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
       if (excluded.has(relPath.toLowerCase())) continue;
       seen.push(relPath);
       const kind = assetKindForPath(relPath);
-      const prev = known.get(relPath);
+      const prev = known.get(relPath.toLowerCase());
       const wantsThumb = kind === 'IMAGE' || kind === 'VIDEO';
       const unchanged = prev && prev.size === stat.size && Math.abs(prev.mtime - stat.mtimeMs) < 2000 && (prev.thumb || !wantsThumb);
       if (!unchanged) {
         batch.push({ relPath, size: stat.size, mtime: stat.mtime.toISOString(), kind, thumbnail: await thumbnail(file, kind) });
         if (batch.length >= BATCH) await flush();
       }
-      if (seen.length % 200 === 0) emit({ seen: seen.length });
+      if (seen.length % 25 === 0) emit({ seen: seen.length });
       if (Date.now() - lastRenew > 2 * 60_000) {
         await api('POST', '/library/lease/renew', { leaseToken });
         lastRenew = Date.now();

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink, ImageIcon, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { POST_STATUS_LABELS, PLATFORM_PRESETS, type Platform, type PostAction } from '@mh/shared';
@@ -28,6 +28,7 @@ const STEPS = ['DRAFT', 'CREATOR_APPROVED', 'IN_REVIEW', 'SCHEDULED', 'POSTED'] 
 export function PostDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: post, isLoading } = useQuery({ queryKey: ['post', id], queryFn: () => api.get<PostDetail>(`/posts/${id}`) });
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -36,14 +37,26 @@ export function PostDetailPage() {
   const [variants, setVariants] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<PostAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const notice = (location.state as { notice?: string } | null)?.notice ?? null;
 
+  // A Canva return refreshes this post so the preview can change. Reload the form only when the words changed, so that refresh does not wipe unsaved copy.
+  const formSeed = useRef<string | null>(null);
   useEffect(() => {
     if (!post) return;
+    const seed = JSON.stringify({
+      title: post.title,
+      body: post.body,
+      platforms: post.platforms,
+      scheduledAt: post.scheduledAt,
+      variants: post.variants.map((variant) => [variant.platform, variant.body]),
+    });
+    if (formSeed.current === seed) return;
+    formSeed.current = seed;
     setTitle(post.title);
     setBody(post.body);
     setPlatforms(post.platforms);
     setScheduledAt(toLocalInput(post.scheduledAt));
-    setVariants(Object.fromEntries(post.variants.map((v) => [v.platform, v.body])));
+    setVariants(Object.fromEntries(post.variants.map((variant) => [variant.platform, variant.body])));
   }, [post]);
 
   const refresh = () => {
@@ -119,6 +132,11 @@ export function PostDetailPage() {
         ))}
       </div>
 
+      {notice && (
+        <div className="mb-6 rounded-lg border border-sage/40 bg-sage/10 px-4 py-3 text-sm text-mist">
+          {notice}
+        </div>
+      )}
       {post.reviewNote && post.status === 'DRAFT' && (
         <div className="mb-6 rounded-lg border border-amber-800/60 bg-amber-950/40 px-4 py-3 text-sm">
           <div className="font-medium text-amber-200">Manager feedback</div>
@@ -213,28 +231,49 @@ function GraphicsCard({ post, onDone, onError }: { post: PostDetail; onDone: () 
     onSuccess: () => { setRegen(false); onDone(); },
     onError,
   });
-  const designs = new Map<string, { id: string; previewKey: string | null; platforms: Platform[] }>();
+  const designs = new Map<string, { id: string; previewKey: string | null; canvaDesignId: string | null; platforms: Platform[] }>();
   for (const v of post.variants) {
     const d = v.design ?? post.design;
     if (!d) continue;
-    const entry = designs.get(d.id) ?? { id: d.id, previewKey: d.previewKey, platforms: [] };
+    const entry = designs.get(d.id) ?? { id: d.id, previewKey: d.previewKey, canvaDesignId: d.canvaDesignId ?? null, platforms: [] };
     entry.platforms.push(v.platform);
     designs.set(d.id, entry);
   }
+  const openCanva = async (designId: string) => {
+    try {
+      const { url } = await api.post<{ url: string }>(`/canva/graphics/${designId}/edit`);
+      await window.api.app.openExternal(url);
+    } catch (err) {
+      onError(err);
+    }
+  };
   return (
-    <Card title="Graphics" actions={post.editable && <Button size="sm" variant="ghost" onClick={() => setRegen(true)}><RefreshCw className="h-3.5 w-3.5" /> Regenerate</Button>}>
+    <Card title="Graphics" actions={
+      <div className="flex gap-1">
+        <Button size="sm" variant="ghost" onClick={() => onDone()} title="Reload the preview"><RefreshCw className="h-3.5 w-3.5" /></Button>
+        {post.editable && <Button size="sm" variant="ghost" onClick={() => setRegen(true)}>Regenerate</Button>}
+      </div>
+    }>
       {designs.size === 0 ? (
         <p className="text-sm text-slate-500">No graphics attached.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
           {[...designs.values()].map((d) => (
-            <Link key={d.id} to={`/designs/${d.id}`} className="overflow-hidden rounded-md border border-slate-800 hover:border-slate-600" title="Open in the design editor">
-              <div className="flex aspect-square items-center justify-center bg-slate-900">
-                {d.previewKey ? <img src={fileUrl(d.previewKey)} className="max-h-full max-w-full object-contain" /> : <ImageIcon className="h-8 w-8 text-slate-700" />}
+            <div key={d.id} className="overflow-hidden rounded-md border border-slate-800">
+              <Link to={`/designs/${d.id}`} className="block hover:opacity-90" title="Open in the design editor">
+                <div className="flex aspect-square items-center justify-center bg-slate-900">
+                  {d.previewKey ? <img src={fileUrl(d.previewKey)} className="max-h-full max-w-full object-contain" /> : <ImageIcon className="h-8 w-8 text-slate-700" />}
+                </div>
+              </Link>
+              <div className="flex items-center gap-2 px-2 py-1.5">
+                <div className="min-w-0 flex-1 truncate text-[11px] text-slate-400">{d.platforms.map((p) => PLATFORM_PRESETS[p].label).join(', ')}</div>
+                {d.canvaDesignId && (
+                  <button type="button" className="text-[11px] text-sage hover:underline" onClick={() => void openCanva(d.id)}>Edit in Canva</button>
+                )}
               </div>
-              <div className="truncate px-2 py-1 text-[11px] text-slate-400">{d.platforms.map((p) => PLATFORM_PRESETS[p].label).join(', ')}</div>
-            </Link>
+            </div>
           ))}
+          <p className="text-[11px] text-slate-500">When you click Return in Canva, this preview updates to the finished design.</p>
         </div>
       )}
       <p className="mt-3 text-xs text-slate-500">{post.perPlatformFiles ? 'One graphic per platform size.' : 'One graphic shared by all platforms.'} Click a graphic to edit its layers or export PSD, SVG, PDF or IDML.</p>

@@ -126,3 +126,14 @@ export function toRelPath(root: string, absolute: string): string {
   if (!a.toLowerCase().startsWith(r.toLowerCase() + '/')) throw new Error(`${absolute} is outside ${root}`);
   return a.slice(r.length + 1);
 }
+
+/**
+ * After a scan, which indexed files were not seen on disk.
+ * An empty seen list must not wipe the library (failed/empty walker).
+ * Paths compare case-insensitively for Windows shares.
+ */
+export function missingAfterScan(existing: { id: string; relPath: string }[], seenPaths: string[]): string[] {
+  if (seenPaths.length === 0) return [];
+  const seen = new Set(seenPaths.map((rel) => rel.toLowerCase()));
+  return existing.filter((asset) => !seen.has(asset.relPath.toLowerCase())).map((asset) => asset.id);
+}

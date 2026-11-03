@@ -12,6 +12,8 @@ const INVALIDATE: Record<string, string[][]> = {
   library: [['assets'], ['library-stats']],
   notification: [['notifications'], ['dashboard']],
   onboarding: [['onboarding'], ['brand']],
+  // A Canva return replaces the stored graphic while this window is still open on the post.
+  design: [['designs'], ['design'], ['posts'], ['post'], ['dashboard']],
 };
 
 /** Live updates over WebSocket: refreshes affected views and shows desktop notifications. */

@@ -1,6 +1,7 @@
 {
   "version": "0.2.0",
   "configurations": [
+    
     {
       "name": "Dev database (PGlite)",
       "type": "node",
@@ -32,7 +33,7 @@
       "windows": {
         "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron-vite.CMD"
       },
-      "runtimeArgs": ["--sourcemap", "--watch"],
+      "runtimeArgs": ["--sourcemap"],
       "env": { "REMOTE_DEBUGGING_PORT": "9222" },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"],
@@ -51,13 +52,13 @@
   ],
   "compounds": [
     {
-      "name": "Mantis (all)",
+      "name": "Marketing Hub (all)",
       "configurations": ["Dev database (PGlite)", "API server", "Desktop: main process", "Desktop: UI (renderer)"],
       "stopAll": true,
       "presentation": { "group": "1_start", "order": 1 }
     },
     {
-      "name": "Mantis (desktop only)",
+      "name": "Marketing Hub (desktop only)",
       "configurations": ["Desktop: main process", "Desktop: UI (renderer)"],
       "stopAll": true,
       "presentation": { "group": "1_start", "order": 2 }

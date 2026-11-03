@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, type Prisma } from '@mh/db';
-import { assetHiddenFromAi, assetProductSchema, libraryAssetBatchSchema, libraryBatchEditSchema, libraryRelocateSchema, libraryScanCompleteSchema, normalizeImportPath } from '@mh/shared';
+import { assetHiddenFromAi, assetProductSchema, libraryAssetBatchSchema, libraryBatchEditSchema, libraryRelocateSchema, libraryScanCompleteSchema, missingAfterScan, normalizeImportPath } from '@mh/shared';
 import { bus, enqueue, libraryHolds, newStorageKey, randomToken, recordEvent, setLibraryHold, storage } from '@mh/core';
 import { authenticate, badRequest, conflict, HttpError, notFound } from '../http';
 
@@ -96,15 +96,14 @@ export async function assetRoutes(app: FastifyInstance) {
   app.post('/library/scan-complete', async (req) => {
     const body = libraryScanCompleteSchema.parse(req.body);
     const lease = await requireLease(body.leaseToken);
-    const seen = new Set(body.seenPaths);
     const all = await prisma.asset.findMany({ where: { libraryId: lease.libraryId, missing: false }, select: { id: true, relPath: true } });
-    const gone = all.filter((a) => !seen.has(a.relPath)).map((a) => a.id);
+    const gone = missingAfterScan(all, body.seenPaths);
     if (gone.length) await prisma.asset.updateMany({ where: { id: { in: gone } }, data: { missing: true } });
     await prisma.scanLease.update({ where: { token: body.leaseToken }, data: { lastScanAt: new Date(), expiresAt: new Date() } });
     const user = await prisma.user.findUnique({ where: { id: lease.holderId } });
     await recordEvent({
       actorId: lease.holderId, verb: 'scan', entityType: 'library', entityId: lease.libraryId, link: '/library',
-      summary: `Library scan finished on ${lease.machine} (${user?.name ?? 'unknown'}): ${seen.size} files${gone.length ? `, ${gone.length} no longer found` : ''}`,
+      summary: `Library scan finished on ${lease.machine} (${user?.name ?? 'unknown'}): ${body.seenPaths.length} files${gone.length ? `, ${gone.length} no longer found` : ''}`,
     });
     bus.publish({ userId: '*', type: 'library', payload: { scanned: true } });
     return { ok: true, missing: gone.length };

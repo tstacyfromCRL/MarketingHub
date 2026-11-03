@@ -10,6 +10,7 @@ export * from './ai/imageEmbed';
 export * from './org';
 export * from './knowledge';
 export * from './knowledgePack';
+export * from './brandKit';
 export * from './playbooks';
 export * from './extractText';
 export * from './hash';

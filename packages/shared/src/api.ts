@@ -239,6 +239,12 @@ export const generateTextSchema = z.object({
   productIds: z.array(z.string()).default([]),
   tone: z.string().optional(),
 });
+/** Studio social post: brief → tagline, sub-tagline, and feed copy as separate fields. */
+export const generateSocialDraftSchema = z.object({
+  brief: z.string().min(1),
+  platform: z.enum(PLATFORMS).optional(),
+  productIds: z.array(z.string()).default([]),
+});
 export const generateImageSchema = z.object({
   prompt: z.string().min(1),
   width: z.number().int().positive(),

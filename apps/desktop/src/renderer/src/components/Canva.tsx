@@ -1,46 +1,88 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link2, Trash2 } from 'lucide-react';
 import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
 import type { Asset } from '../lib/types';
 import { Button, Card, ErrorText, Field, Modal, Spinner } from './ui';
 
-type CanvaStatus = { configured: boolean; connected: boolean; account: { id: string; displayName: string; connectedBy: string } | null };
+type CanvaStatus = {
+  configured: boolean;
+  connected: boolean;
+  account: { id: string; displayName: string; connectedBy: string; updatedAt: string } | null;
+};
 
 export function CanvaAccountCard() {
   const status = useQuery({ queryKey: ['canva'], queryFn: () => api.get<CanvaStatus>('/canva/status') });
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(false);
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['canva'] });
+  // Snapshot of updatedAt when the browser opens. Reconnect is done when that value changes.
+  const waitingForUpdatedAt = useRef<string | null>(null);
+  const startedWithoutAccount = useRef(false);
+
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => void queryClient.invalidateQueries({ queryKey: ['canva'] }), 2000);
+    const stop = setTimeout(() => {
+      setWaiting(false);
+      waitingForUpdatedAt.current = null;
+      setNotice('Still waiting on the browser. If the browser said Canva connected, open Library → Canva or try Reconnect once more.');
+    }, 180_000);
+    return () => { clearInterval(timer); clearTimeout(stop); };
+  }, [waiting]);
+
+  useEffect(() => {
+    if (!waiting || !status.data?.account) return;
+    const done = startedWithoutAccount.current
+      ? true
+      : status.data.account.updatedAt !== waitingForUpdatedAt.current;
+    if (!done) return;
+    setWaiting(false);
+    waitingForUpdatedAt.current = null;
+    startedWithoutAccount.current = false;
+    setNotice(`Connected ${status.data.account.displayName}. You can browse uploads under Library → Canva.`);
+    setError(null);
+  }, [waiting, status.data?.account]);
+
   const connect = async () => {
     setError(null);
+    setNotice(null);
     try {
+      startedWithoutAccount.current = !status.data?.account;
+      waitingForUpdatedAt.current = status.data?.account?.updatedAt ?? null;
       const { url } = await api.post<{ url: string }>('/canva/connect');
       await window.api.app.openExternal(url);
       setWaiting(true);
-      const timer = setInterval(() => void refresh(), 3000);
-      setTimeout(() => { clearInterval(timer); setWaiting(false); }, 180_000);
     } catch (err) {
+      waitingForUpdatedAt.current = null;
+      startedWithoutAccount.current = false;
       setError(errorMessage(err));
     }
   };
+
   if (!status.data) return <Spinner />;
   const account = status.data.account;
   return (
     <Card title="Canva" actions={
       status.data.configured
-        ? <Button size="sm" variant="secondary" onClick={() => void connect()}><Link2 className="h-3.5 w-3.5" /> {account ? 'Reconnect' : 'Connect'}</Button>
+        ? <Button size="sm" variant="secondary" onClick={() => void connect()} disabled={waiting}>
+            <Link2 className="h-3.5 w-3.5" /> {account ? 'Reconnect' : 'Connect'}
+          </Button>
         : null
     }>
-      {waiting && <p className="mb-2 text-sm text-slate-400">Finish signing in in your browser.</p>}
+      {waiting && <p className="mb-2 text-sm text-slate-400">Finish signing in in your browser. This card updates when Canva sends you back.</p>}
+      {notice && <p className="mb-2 text-sm text-sage">{notice}</p>}
       <ErrorText error={error} />
       {!status.data.configured && <p className="text-sm text-slate-500">Add the Canva app id and secret to the server configuration. The redirect URL is the server address followed by /canva/callback, and the return URL is /canva/return.</p>}
       {status.data.configured && !account && <p className="text-sm text-slate-500">No Canva account connected.</p>}
       {account && (
         <div className="flex items-center gap-3 text-sm">
-          <span className="flex-1">{account.displayName}</span>
+          <span className="flex-1">
+            {account.displayName}
+            <span className="ml-2 text-xs text-slate-500">connected</span>
+          </span>
           <span className="text-xs text-slate-500">by {account.connectedBy}</span>
-          <Button size="sm" variant="ghost" onClick={() => window.confirm(`Disconnect ${account.displayName}?`) && void api.del(`/canva/accounts/${account.id}`).then(refresh)}><Trash2 className="h-3.5 w-3.5" /></Button>
+          <Button size="sm" variant="ghost" onClick={() => window.confirm(`Disconnect ${account.displayName}?`) && void api.del(`/canva/accounts/${account.id}`).then(() => { setNotice(null); void queryClient.invalidateQueries({ queryKey: ['canva'] }); })}><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>
       )}
     </Card>
@@ -58,6 +100,7 @@ export function CanvaGraphicModal({ folderId, onClose }: { folderId: string | nu
   const [title, setTitle] = useState('Canva graphic');
   const [templateId, setTemplateId] = useState('');
   const [headline, setHeadline] = useState('');
+  const [subline, setSubline] = useState('');
   const [query, setQuery] = useState('');
   const [asset, setAsset] = useState<Asset | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +123,7 @@ export function CanvaGraphicModal({ folderId, onClose }: { folderId: string | nu
         title: title.trim(),
         templateId: templateId || undefined,
         headline: headline.trim() || undefined,
+        subline: subline.trim() || undefined,
         libraryAssetId,
         folderId,
         width: 1080,
@@ -87,7 +131,7 @@ export function CanvaGraphicModal({ folderId, onClose }: { folderId: string | nu
       });
       await window.api.app.openExternal(created.editUrl);
       void queryClient.invalidateQueries({ queryKey: ['designs'] });
-      const unused = !created.filled && (headline.trim() || asset);
+      const unused = !created.filled && (headline.trim() || subline.trim() || asset);
       onClose(unused ? 'That template has no fill-in fields, so it opened in Canva unchanged.' : undefined);
     } catch (err) {
       setError(errorMessage(err));
@@ -113,7 +157,8 @@ export function CanvaGraphicModal({ folderId, onClose }: { folderId: string | nu
           {templates.error && <ErrorText error={errorMessage(templates.error)} />}
           {templateId && (
             <>
-              <Field label="Headline"><input className="input" value={headline} onChange={(e) => setHeadline(e.target.value)} /></Field>
+              <Field label="Tagline" hint="First text data field on the template."><input className="input" value={headline} onChange={(e) => setHeadline(e.target.value)} /></Field>
+              <Field label="Sub-tagline" hint="Second text data field on the template."><input className="input" value={subline} onChange={(e) => setSubline(e.target.value)} /></Field>
               <Field label="Image">
                 <input className="input mb-2" placeholder="Search the library" value={query} onChange={(e) => setQuery(e.target.value)} />
                 <div className="grid max-h-48 grid-cols-5 gap-2 overflow-y-auto">

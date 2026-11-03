@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import type { BrandProfileInput } from '@mh/shared';
-import { api, errorMessage, queryClient } from '../lib/api';
+import { api, download, errorMessage, queryClient } from '../lib/api';
 import { BrandFileUploader, ColorTiersEditor } from '../components/BrandKit';
 import { Button, Card, ErrorText, Field, PageHeader, Spinner } from '../components/ui';
 
@@ -15,24 +15,63 @@ export function BrandKitPage() {
   useEffect(() => {
     if (data) setKit({ colors: data.colors, fonts: data.fonts, visualIdentity: data.visualIdentity });
   }, [data]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferring, setTransferring] = useState(false);
   const save = useMutation({
     mutationFn: () => api.patch<BrandProfileInput>('/brand', kit),
     onSuccess: (b) => queryClient.setQueryData(['brand'], b),
   });
-  if (!kit) return <Spinner />;
+  if (!kit || !data) return <Spinner />;
   const set = <K extends keyof Kit>(k: K, v: Kit[K]) => setKit({ ...kit, [k]: v });
+  const unsaved = JSON.stringify(kit) !== JSON.stringify({ colors: data.colors, fonts: data.fonts, visualIdentity: data.visualIdentity });
+
+  const exportKit = async () => {
+    if (unsaved && !window.confirm('Export the last saved brand kit? Changes on this page that are not saved will not be in the file.')) return;
+    setTransferError(null);
+    setTransferring(true);
+    try {
+      await download('/brand/kit/export', 'brand-kit.zip');
+    } catch (err) {
+      setTransferError(errorMessage(err));
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const importKit = async (file: File | undefined) => {
+    if (!file) return;
+    if (!window.confirm('Replace the brand kit on this computer with this file? The company profile, colors, fonts, logos, backgrounds, and overlays in the file overwrite what is here. Example post pictures stay.')) return;
+    setTransferError(null);
+    setTransferring(true);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      await api.post('/brand/kit/import', body);
+      await queryClient.invalidateQueries({ queryKey: ['brand'] });
+      await queryClient.invalidateQueries({ queryKey: ['brand-files'] });
+    } catch (err) {
+      setTransferError(errorMessage(err));
+    } finally {
+      setTransferring(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
 
   return (
     <div>
       <PageHeader
         title="Brand kit"
-        subtitle="Logos, colors and fonts used in every design. Primary colors are used first."
+        subtitle="Logos, colors and fonts used in every design. Primary colors are used first. Export a zip to take this kit to another computer."
         actions={<>
           {save.isSuccess && <span className="text-sm text-emerald-400">Saved</span>}
+          <Button variant="secondary" onClick={() => void exportKit()} loading={transferring}>Export</Button>
+          <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={transferring}>Import</Button>
+          <input ref={fileRef} type="file" accept=".zip,application/zip" className="hidden" onChange={(e) => void importKit(e.target.files?.[0])} />
           <Button onClick={() => save.mutate()} loading={save.isPending}>Save brand kit</Button>
         </>}
       />
-      <ErrorText error={save.error ? errorMessage(save.error) : null} />
+      <ErrorText error={save.error ? errorMessage(save.error) : transferError} />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <Card title="Colors"><ColorTiersEditor colors={kit.colors} onChange={(c) => set('colors', c)} /></Card>

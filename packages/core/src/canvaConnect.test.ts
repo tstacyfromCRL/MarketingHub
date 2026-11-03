@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { canvaAutofillData, canvaAuthorizeUrl, canvaCodeChallenge, canvaEditLink, canvaMissingImageFrame, canvaTemplateUsesAutofill, verifyCanvaReturnJwt } from './canvaConnect';
+import {
+  canvaAutofillData, canvaAuthorizeUrl, canvaCodeChallenge, canvaEditLink, canvaMissingImageFrame,
+  canvaTemplateUsesAutofill, normalizeCanvaFolderItems, verifyCanvaReturnJwt,
+} from './canvaConnect';
 
 describe('Canva Connect', () => {
   it('builds an authorize URL with a PKCE challenge', () => {
@@ -12,15 +15,32 @@ describe('Canva Connect', () => {
     expect(url.searchParams.get('client_id')).toBe('OC-test');
     expect(url.searchParams.get('scope')).toContain('design:content:write');
     expect(url.searchParams.get('scope')).toContain('brandtemplate:content:read');
+    expect(url.searchParams.get('scope')).toContain('folder:read');
   });
 
-  it('fills the first text field and the first image field', () => {
+  it('keeps folders and image uploads from a Canva folder listing', () => {
+    const items = normalizeCanvaFolderItems([
+      { type: 'folder', folder: { id: 'F1', name: 'Campaigns', updated_at: 100, thumbnail: { url: 'https://thumb/folder' } } },
+      { type: 'image', image: { id: 'A1', name: 'Hero', tags: ['launch'], updated_at: 200, thumbnail: { url: 'https://thumb/image' } } },
+      { type: 'design' },
+      { type: 'image', image: { id: '', name: 'Missing id' } },
+      { type: 'folder', folder: { id: 'F2', name: '  ' } },
+    ]);
+    expect(items).toEqual([
+      { type: 'folder', id: 'F1', name: 'Campaigns', thumbnailUrl: 'https://thumb/folder', updatedAt: 100 },
+      { type: 'image', id: 'A1', name: 'Hero', tags: ['launch'], thumbnailUrl: 'https://thumb/image', updatedAt: 200 },
+      { type: 'folder', id: 'F2', name: 'Folder', thumbnailUrl: null, updatedAt: null },
+    ]);
+  });
+
+  it('fills the first text, second text, and first image fields', () => {
     const data = canvaAutofillData(
       [{ name: 'HEADLINE', type: 'text' }, { name: 'PHOTO', type: 'image' }, { name: 'SUBLINE', type: 'text' }],
-      { headline: 'CardShark', assetId: 'asset-1' },
+      { headline: 'CardShark', subline: 'See it live', assetId: 'asset-1' },
     );
     expect(data).toEqual({
       HEADLINE: { type: 'text', text: 'CardShark' },
+      SUBLINE: { type: 'text', text: 'See it live' },
       PHOTO: { type: 'image', asset_id: 'asset-1' },
     });
   });
