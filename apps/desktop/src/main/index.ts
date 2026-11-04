@@ -5,7 +5,7 @@ import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import { api } from './api';
 import { checkAccess, getLocation, importPaths, relocateFiles, resolveAsset, selectLocation } from './library';
-import { scanLibrary, scanProgress, setProgressSink, startScheduledScans } from './indexer';
+import { cancelLibraryScan, pauseLibraryScan, resumeLibraryScan, scanLibrary, scanProgress, setProgressSink, startScheduledScans } from './indexer';
 import { store } from './store';
 
 let win: BrowserWindow | null = null;
@@ -135,6 +135,9 @@ function registerIpc() {
   // ---- Indexing & files ----
   ipcMain.handle('library:scan', (_e, force?: boolean) => scanLibrary({ force }));
   ipcMain.handle('library:scanProgress', () => scanProgress());
+  ipcMain.handle('library:pauseScan', () => pauseLibraryScan());
+  ipcMain.handle('library:resumeScan', () => resumeLibraryScan());
+  ipcMain.handle('library:cancelScan', () => cancelLibraryScan());
   ipcMain.handle('library:open', async (_e, relPath: string) => {
     const err = await shell.openPath(resolveAsset(relPath));
     if (err) throw new Error(err);

@@ -7,7 +7,9 @@ function loadParser(name: string): Promise<Record<string, unknown>> {
 export async function extractText(buffer: Buffer, mimeOrName: string): Promise<string> {
   const hint = mimeOrName.toLowerCase();
   if (hint.includes('pdf') || hint.endsWith('.pdf')) {
-    const loaded = await loadParser('pdf-parse');
+    // The package entry runs a demo that opens ./test/data/05-versions-space.pdf whenever it is
+    // imported without a parent module. Load the parser itself so only the uploaded file is read.
+    const loaded = await loadParser('pdf-parse/lib/pdf-parse.js');
     const pdfParse = (loaded.default ?? loaded) as (data: Buffer) => Promise<{ text: string }>;
     const result = await pdfParse(buffer);
     return result.text.trim();

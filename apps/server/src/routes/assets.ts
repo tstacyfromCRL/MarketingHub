@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, type Prisma } from '@mh/db';
-import { assetHiddenFromAi, assetProductSchema, libraryAssetBatchSchema, libraryBatchEditSchema, libraryRelocateSchema, libraryScanCompleteSchema, missingAfterScan, normalizeImportPath } from '@mh/shared';
+import { assetHiddenFromAi, assetProductSchema, libraryAssetBatchSchema, libraryBatchEditSchema, libraryRelocateSchema, libraryScanCompleteSchema, missingAfterControlledScan, normalizeImportPath } from '@mh/shared';
 import { bus, enqueue, libraryHolds, newStorageKey, randomToken, recordEvent, setLibraryHold, storage } from '@mh/core';
 import { authenticate, badRequest, conflict, HttpError, notFound } from '../http';
 
@@ -97,15 +97,21 @@ export async function assetRoutes(app: FastifyInstance) {
     const body = libraryScanCompleteSchema.parse(req.body);
     const lease = await requireLease(body.leaseToken);
     const all = await prisma.asset.findMany({ where: { libraryId: lease.libraryId, missing: false }, select: { id: true, relPath: true } });
-    const gone = missingAfterScan(all, body.seenPaths);
+    const gone = missingAfterControlledScan(all, body.seenPaths, Boolean(body.releaseOnly));
     if (gone.length) await prisma.asset.updateMany({ where: { id: { in: gone } }, data: { missing: true } });
-    await prisma.scanLease.update({ where: { token: body.leaseToken }, data: { lastScanAt: new Date(), expiresAt: new Date() } });
+    // A cancelled import releases the scanner without pretending the walk finished.
+    await prisma.scanLease.update({
+      where: { token: body.leaseToken },
+      data: body.releaseOnly ? { expiresAt: new Date() } : { lastScanAt: new Date(), expiresAt: new Date() },
+    });
     const user = await prisma.user.findUnique({ where: { id: lease.holderId } });
     await recordEvent({
       actorId: lease.holderId, verb: 'scan', entityType: 'library', entityId: lease.libraryId, link: '/library',
-      summary: `Library scan finished on ${lease.machine} (${user?.name ?? 'unknown'}): ${body.seenPaths.length} files${gone.length ? `, ${gone.length} no longer found` : ''}`,
+      summary: body.releaseOnly
+        ? `Library import cancelled on ${lease.machine} (${user?.name ?? 'unknown'}). Files already indexed were kept.`
+        : `Library scan finished on ${lease.machine} (${user?.name ?? 'unknown'}): ${body.seenPaths.length} files${gone.length ? `, ${gone.length} no longer found` : ''}`,
     });
-    bus.publish({ userId: '*', type: 'library', payload: { scanned: true } });
+    if (!body.releaseOnly) bus.publish({ userId: '*', type: 'library', payload: { scanned: true } });
     return { ok: true, missing: gone.length };
   });
 

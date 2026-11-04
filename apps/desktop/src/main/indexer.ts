@@ -1,27 +1,50 @@
 import { nativeImage, type WebContents } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assetKindForPath, toRelPath, type AssetKind } from '@mh/shared';
+import { assetKindForPath, toRelPath, type AssetKind, type LibraryScanProgress } from '@mh/shared';
 import { api, ApiError } from './api';
 import { checkAccess, currentStatus } from './library';
 import { store } from './store';
 
-export interface ScanProgress {
-  state: 'idle' | 'scanning' | 'busy' | 'error' | 'done';
-  seen: number;
-  uploaded: number;
-  message?: string;
-}
+export type ScanProgress = LibraryScanProgress;
 
 const SKIP_NAMES = new Set(['thumbs.db', 'desktop.ini', '.ds_store', '$recycle.bin', 'system volume information']);
 const BATCH = 40;
 const RESCAN_MS = 30 * 60_000;
 
 let running = false;
-let progress: ScanProgress = { state: 'idle', seen: 0, uploaded: 0 };
+/** run keeps walking. pause waits between files. cancel stops without marking unseen files missing. */
+let control: 'run' | 'pause' | 'cancel' = 'run';
+let progress: ScanProgress = { state: 'idle', phase: 'finding', found: 0, indexed: 0, seen: 0, uploaded: 0 };
 let sink: WebContents | null = null;
 
 export const scanProgress = () => progress;
+
+export function pauseLibraryScan(): ScanProgress {
+  if (running && control === 'run') {
+    control = 'pause';
+    emit({ state: 'paused' });
+  }
+  return progress;
+}
+
+export function resumeLibraryScan(): ScanProgress {
+  if (running && control === 'pause') {
+    control = 'run';
+    emit({ state: 'scanning' });
+  }
+  return progress;
+}
+
+export function cancelLibraryScan(): ScanProgress {
+  if (running && control !== 'cancel') {
+    control = 'cancel';
+    emit({ state: 'cancelled', message: 'Cancelling…' });
+  }
+  return progress;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export function setProgressSink(wc: WebContents) {
   sink = wc;
 }
@@ -78,7 +101,8 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
   }
   const root = status.path;
   running = true;
-  emit({ state: 'scanning', seen: 0, uploaded: 0, message: undefined });
+  control = 'run';
+  emit({ state: 'scanning', phase: 'finding', found: 0, indexed: 0, seen: 0, uploaded: 0, message: undefined });
 
   let leaseToken: string;
   try {
@@ -98,23 +122,47 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
     const imports = await api<{ relPath: string; kind: 'FOLDER' | 'FILE' }[]>('GET', '/library/imports');
     const excluded = new Set((await api<string[]>('GET', '/library/exclusions')).map((rel) => rel.toLowerCase()));
     const seen: string[] = [];
+    let indexed = 0;
     let batch: { relPath: string; size: number; mtime: string; kind: AssetKind; thumbnail?: string }[] = [];
-    let lastRenew = Date.now();
+    const renewed = { at: Date.now() };
 
     if (imports.length === 0) {
       // Finish the lease without wiping existing assets (empty seenPaths is ignored server-side).
       await api('POST', '/library/scan-complete', { leaseToken, seenPaths: [] });
-      emit({ state: 'done', seen: 0, uploaded: 0, message: 'Nothing is imported yet. Import folders or files first.' });
+      emit({ state: 'done', phase: 'indexing', found: 0, indexed: 0, seen: 0, uploaded: 0, message: 'Nothing is imported yet. Import folders or files first.' });
       return progress;
     }
 
+    // Pause holds the lease. Cancel releases it and leaves files the walk has not reached alone.
+    const hold = async (): Promise<'run' | 'cancel'> => {
+      while (control === 'pause') {
+        if (Date.now() - renewed.at > 60_000) {
+          await api('POST', '/library/lease/renew', { leaseToken });
+          renewed.at = Date.now();
+        }
+        await wait(300);
+      }
+      return control === 'cancel' ? 'cancel' : 'run';
+    };
+    const abandon = async () => {
+      await api('POST', '/library/scan-complete', { leaseToken, seenPaths: [], releaseOnly: true });
+      emit({
+        state: 'cancelled',
+        message: indexed > 0
+          ? `Import cancelled. ${indexed.toLocaleString()} files were indexed. The rest were left as they were.`
+          : 'Import cancelled. Nothing new was indexed.',
+      });
+    };
+
     const flush = async () => {
       if (batch.length === 0) return;
+      const sent = batch.length;
       await api('POST', '/library/assets/batch', { leaseToken, assets: batch });
-      // Emit seen with every batch so the UI can refresh while thumbnails are still running.
-      emit({ seen: seen.length, uploaded: progress.uploaded + batch.length });
+      indexed += sent;
       batch = [];
-      lastRenew = Date.now();
+      renewed.at = Date.now();
+      // Emit with every batch so the grid can refresh while thumbnails are still running.
+      emit({ phase: 'indexing', indexed, seen: indexed, uploaded: progress.uploaded + sent });
     };
 
     async function* selectedFiles(): AsyncGenerator<string> {
@@ -125,38 +173,61 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
       }
     }
 
+    // Count first so the bar has a total. Indexing is the second walk over that list.
+    const files: string[] = [];
     for await (const file of selectedFiles()) {
+      if (await hold() === 'cancel') {
+        await abandon();
+        return progress;
+      }
+      const relPath = toRelPath(root, file);
+      if (excluded.has(relPath.toLowerCase())) continue;
+      files.push(file);
+      if (files.length % 25 === 0) emit({ phase: 'finding', found: files.length, seen: files.length });
+    }
+    emit({ phase: 'indexing', found: files.length, indexed: 0, seen: 0 });
+
+    for (const file of files) {
+      if (await hold() === 'cancel') {
+        await flush();
+        await abandon();
+        return progress;
+      }
       let stat;
       try {
         stat = await fs.stat(file);
       } catch {
+        indexed += 1;
+        emit({ phase: 'indexing', indexed, seen: indexed });
         continue;
       }
       const relPath = toRelPath(root, file);
-      if (excluded.has(relPath.toLowerCase())) continue;
       seen.push(relPath);
       const kind = assetKindForPath(relPath);
       const prev = known.get(relPath.toLowerCase());
       const wantsThumb = kind === 'IMAGE' || kind === 'VIDEO';
       const unchanged = prev && prev.size === stat.size && Math.abs(prev.mtime - stat.mtimeMs) < 2000 && (prev.thumb || !wantsThumb);
-      if (!unchanged) {
+      if (unchanged) {
+        indexed += 1;
+        if (indexed % 25 === 0) emit({ phase: 'indexing', indexed, seen: indexed });
+      } else {
         batch.push({ relPath, size: stat.size, mtime: stat.mtime.toISOString(), kind, thumbnail: await thumbnail(file, kind) });
         if (batch.length >= BATCH) await flush();
       }
-      if (seen.length % 25 === 0) emit({ seen: seen.length });
-      if (Date.now() - lastRenew > 2 * 60_000) {
+      if (Date.now() - renewed.at > 2 * 60_000) {
         await api('POST', '/library/lease/renew', { leaseToken });
-        lastRenew = Date.now();
+        renewed.at = Date.now();
       }
     }
     await flush();
     await api('POST', '/library/scan-complete', { leaseToken, seenPaths: seen });
     store.set('lastScanAt', new Date().toISOString());
-    emit({ state: 'done', seen: seen.length });
+    emit({ state: 'done', phase: 'indexing', found: files.length, indexed: files.length, seen: files.length });
   } catch (err) {
     emit({ state: 'error', message: (err as Error).message });
   } finally {
     running = false;
+    control = 'run';
   }
   return progress;
 }

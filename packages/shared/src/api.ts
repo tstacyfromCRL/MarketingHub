@@ -103,6 +103,8 @@ export const libraryScanCompleteSchema = z.object({
   leaseToken: z.string(),
   /** Every relPath seen during a full scan; anything else gets marked missing. */
   seenPaths: z.array(z.string()),
+  /** Cancel stops the walk. Files already sent stay. Unseen files are not marked missing. */
+  releaseOnly: z.boolean().optional(),
 });
 export { assetKindForPath };
 

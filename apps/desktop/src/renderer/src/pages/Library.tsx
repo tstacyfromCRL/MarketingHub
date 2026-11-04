@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
-import { assetHiddenFromAi } from '@mh/shared';
+import { assetHiddenFromAi, libraryCardProductTags, libraryScanBar, type LibraryScanProgress } from '@mh/shared';
 import { Check, CheckSquare, ExternalLink, EyeOff, FilePlus, FileText, FolderPlus, FolderSearch, Film, ImageIcon, ImagePlus, RefreshCw, Tag, Trash2, Upload, X } from 'lucide-react';
 import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
 import { formatDate } from '../lib/format';
@@ -34,8 +34,8 @@ export function LibraryPage() {
   const [showLocation, setShowLocation] = useState(false);
   const total = Object.values(stats.data?.byKind ?? {}).reduce((a, b) => a + b, 0);
 
-  return (
-    <div>
+  const intro = (
+    <>
       <PageHeader
         title="Asset library"
         subtitle={
@@ -52,17 +52,23 @@ export function LibraryPage() {
         value={source}
         onChange={(next) => setParams(next === 'canva' ? { source: 'canva' } : {})}
       />
-      {source === 'canva' ? <CanvaLibraryBrowser /> : (
-        <>
-          {showLocation && <Card className="mb-4"><LibraryLocation /></Card>}
-          <DriveLibrary />
-        </>
-      )}
-    </div>
+      {source === 'drive' && showLocation && <Card className="mb-4"><LibraryLocation /></Card>}
+    </>
   );
+  if (source === 'canva') {
+    return (
+      <div className="pt-6">
+        {intro}
+        <CanvaLibraryBrowser />
+      </div>
+    );
+  }
+  return <DriveLibrary intro={intro} />;
 }
 
-function DriveLibrary() {
+function DriveLibrary({ intro }: { intro: ReactNode }) {
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('');
@@ -73,7 +79,7 @@ function DriveLibrary() {
   const [importBusy, setImportBusy] = useState<'FOLDER' | 'FILE' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [progress, setProgress] = useState<LibraryScanProgress | null>(null);
   const products = useProducts();
   const imports = useQuery({ queryKey: ['library-imports'], queryFn: () => api.get<LibraryPath[]>('/library/imports') });
   const holds = useQuery({ queryKey: ['library-holds'], queryFn: () => api.get<LibraryPath[]>('/library/holds') });
@@ -93,14 +99,14 @@ function DriveLibrary() {
   useEffect(() => setPage(1), [q, kind, productId, untagged]);
   useEffect(() => setPicked([]), [page, q, kind, productId, untagged]);
   useEffect(() => {
-    void window.api.library.scanProgress().then((p) => setScanning(p.state === 'scanning'));
+    void window.api.library.scanProgress().then(setProgress);
     let lastUploaded = 0;
     return window.api.library.onProgress((p) => {
-      setScanning(p.state === 'scanning');
+      setProgress(p);
       // Files land in the DB per batch; refresh the grid while thumbnails are still running.
-      const batchLanded = p.state === 'scanning' && p.uploaded > lastUploaded;
+      const batchLanded = (p.state === 'scanning' || p.state === 'paused') && p.uploaded > lastUploaded;
       if (batchLanded) lastUploaded = p.uploaded;
-      if (batchLanded || p.state === 'done' || p.state === 'error') {
+      if (batchLanded || p.state === 'done' || p.state === 'cancelled' || p.state === 'error') {
         void queryClient.invalidateQueries({ queryKey: ['assets'] });
         void queryClient.invalidateQueries({ queryKey: ['library-stats'] });
         void queryClient.invalidateQueries({ queryKey: ['library-imports'] });
@@ -130,37 +136,55 @@ function DriveLibrary() {
   const pageItems = assets.data?.items ?? [];
   const pages = Math.max(1, Math.ceil((assets.data?.total ?? 0) / (assets.data?.pageSize ?? 60)));
 
+  // The file panel sticks under this bar, so it needs the bar's live height.
+  useEffect(() => {
+    const bar = toolbarRef.current;
+    if (!bar) return;
+    const measure = () => setToolbarHeight(bar.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div className="flex gap-6">
-      <div className="min-w-0 flex-1">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <input className="input max-w-xs" placeholder="Search by file name, tag or description..." value={q} onChange={(e) => setQ(e.target.value)} />
-          <select className="input w-36" value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="">All types</option>
-            <option value="IMAGE">Images</option>
-            <option value="VIDEO">Videos</option>
-            <option value="DOCUMENT">Documents</option>
-          </select>
-          <select className="input w-48" value={productId} onChange={(e) => setProductId(e.target.value)}>
-            <option value="">Any product</option>
-            {products.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <label className="flex items-center gap-1.5 text-sm text-slate-300">
-            <input type="checkbox" checked={untagged} onChange={(e) => setUntagged(e.target.checked)} /> Not tagged yet
-          </label>
-          <div className="flex-1" />
-          <Button size="sm" variant="secondary" onClick={() => void importFromDrive('FOLDER')} loading={importBusy === 'FOLDER'}>
-            <FolderPlus className="h-3.5 w-3.5" /> Import folders
-          </Button>
-          <Button size="sm" onClick={() => void importFromDrive('FILE')} loading={importBusy === 'FILE'}>
-            <FilePlus className="h-3.5 w-3.5" /> Import files
-          </Button>
+    <div>
+      {/* First row under the Studio menu. The page title scrolls away beneath it. */}
+      <div ref={toolbarRef} className="sticky top-0 z-20 -mx-8 mb-0 border-b border-white/10 bg-ink px-8 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input className="input max-w-xs" placeholder="Search by file name, tag or description..." value={q} onChange={(e) => setQ(e.target.value)} />
+            <select className="input w-36" value={kind} onChange={(e) => setKind(e.target.value)}>
+              <option value="">All types</option>
+              <option value="IMAGE">Images</option>
+              <option value="VIDEO">Videos</option>
+              <option value="DOCUMENT">Documents</option>
+            </select>
+            <select className="input w-48" value={productId} onChange={(e) => setProductId(e.target.value)}>
+              <option value="">Any product</option>
+              {products.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <label className="flex items-center gap-1.5 text-sm text-slate-300">
+              <input type="checkbox" checked={untagged} onChange={(e) => setUntagged(e.target.checked)} /> Not tagged yet
+            </label>
+            <div className="flex-1" />
+            <Button size="sm" variant="secondary" onClick={() => void importFromDrive('FOLDER')} loading={importBusy === 'FOLDER'}>
+              <FolderPlus className="h-3.5 w-3.5" /> Import folders
+            </Button>
+            <Button size="sm" onClick={() => void importFromDrive('FILE')} loading={importBusy === 'FILE'}>
+              <FilePlus className="h-3.5 w-3.5" /> Import files
+            </Button>
+          </div>
+          {picked.length > 0 && <div className="mt-3"><BatchBar ids={picked} items={pageItems} products={products.data ?? []} onDone={() => setPicked([])} /></div>}
+          {(progress?.state === 'scanning' || progress?.state === 'paused' || progress?.state === 'cancelled' || progress?.state === 'error') && (
+            <ImportProgress progress={progress} />
+          )}
         </div>
+        <div className="flex gap-6 pt-6">
+      <div className="min-w-0 flex-1">
+        {intro}
         <FolderFlags imports={imports.data ?? []} holds={holds.data ?? []} />
-        {scanning && <p className="mb-3 text-xs text-slate-400">Indexing imported files… thumbnails can take a while; files should appear here as each batch finishes.</p>}
         {notice && <p className="mb-3 text-sm text-amber-200">{notice}</p>}
         <ErrorText error={importError} />
-        {picked.length > 0 && <BatchBar ids={picked} items={pageItems} products={products.data ?? []} onDone={() => setPicked([])} />}
 
         {assets.isLoading ? (
           <Spinner />
@@ -176,6 +200,7 @@ function DriveLibrary() {
               {assets.data.items.map((a) => {
                 const Icon = KIND_ICON[a.kind];
                 const isPicked = picked.includes(a.id);
+                const cardTags = libraryCardProductTags(a.products);
                 return (
                   <div key={a.id} className={`group relative overflow-hidden rounded-lg border text-left ${a.notForPublicUse ? 'opacity-60' : ''} ${selected === a.id || isPicked ? 'border-indigo-500' : 'border-slate-800 hover:border-slate-600'}`}>
                     <button
@@ -191,15 +216,12 @@ function DriveLibrary() {
                       {a.thumbnailKey ? <img src={fileUrl(a.thumbnailKey)} className="h-full w-full object-cover" loading="lazy" /> : <Icon className="h-10 w-10 text-slate-600" />}
                       {a.notForPublicUse && <span className="absolute bottom-1.5 left-1.5 right-1.5 truncate rounded bg-slate-950/85 px-1 py-0.5 text-center text-[10px] text-slate-300">Not for public use</span>}
                     </div>
-                    <div className="p-2">
+                    <div className={`px-2 pt-2 ${cardTags.length ? '' : 'pb-2'}`}>
                       <div className="truncate text-xs" title={a.relPath}>{a.relPath.split('/').pop()}</div>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {a.products.filter((p) => p.confirmed !== false).slice(0, 2).map((p) => (
-                          <Badge key={p.productId} color={p.confirmed ? '#22c55e' : '#f59e0b'}>{p.product.name}{p.confirmed ? '' : '?'}</Badge>
-                        ))}
-                      </div>
                     </div>
                     </button>
+                    {/* Confirm and reject sit on the orange suggestion so a decision does not require opening the file. */}
+                    <CardProductTags asset={a} />
                   </div>
                 );
               })}
@@ -221,7 +243,44 @@ function DriveLibrary() {
           </>
         )}
       </div>
-      {selected && <AssetDrawer id={selected} holds={holds.data ?? []} onClose={() => setParams({})} />}
+      {selected && <AssetDrawer id={selected} holds={holds.data ?? []} offset={toolbarHeight} onClose={() => setParams({})} />}
+        </div>
+    </div>
+  );
+}
+
+/** Found vs indexed for the import that is running. Pause and cancel stay beside the bar. */
+function ImportProgress({ progress }: { progress: LibraryScanProgress }) {
+  const percent = libraryScanBar(progress.phase, progress.found, progress.indexed);
+  const working = progress.state === 'scanning' || progress.state === 'paused';
+  return (
+    <div className="mt-3 flex items-center gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 text-xs text-slate-300">
+          {progress.state === 'cancelled' || progress.state === 'error'
+            ? progress.message
+            : `${progress.found.toLocaleString()} found · ${progress.indexed.toLocaleString()} indexed${progress.state === 'paused' ? ' · Paused' : ''}`}
+        </div>
+        {working && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+            {percent == null ? (
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-indigo-500" />
+            ) : (
+              <div className="h-full rounded-full bg-indigo-500 transition-[width]" style={{ width: `${percent}%` }} />
+            )}
+          </div>
+        )}
+      </div>
+      {working && (
+        <>
+          {progress.state === 'paused' ? (
+            <Button size="sm" variant="secondary" onClick={() => void window.api.library.resumeScan()}>Resume</Button>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => void window.api.library.pauseScan()}>Pause</Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => void window.api.library.cancelScan()}>Cancel import</Button>
+        </>
+      )}
     </div>
   );
 }
@@ -230,6 +289,73 @@ function refreshLibrary() {
   void queryClient.invalidateQueries({ queryKey: ['assets'] });
   void queryClient.invalidateQueries({ queryKey: ['library-stats'] });
   void queryClient.invalidateQueries({ queryKey: ['library-holds'] });
+}
+
+/** Orange tags are unconfirmed product matches. The check and X only stay while that decision is open. */
+function CardProductTags({ asset }: { asset: Asset }) {
+  const [error, setError] = useState<string | null>(null);
+  const shown = libraryCardProductTags(asset.products);
+  const confirm = useMutation({
+    mutationFn: (v: { productId: string; confirmed: boolean }) => api.put(`/library/assets/${asset.id}/products`, v),
+    onMutate: async (v) => {
+      setError(null);
+      await queryClient.cancelQueries({ queryKey: ['assets'] });
+      const snapshots = queryClient.getQueriesData({ queryKey: ['assets'] });
+      queryClient.setQueriesData<{ items: Asset[] }>({ queryKey: ['assets'] }, (old) => {
+        if (!old?.items) return old;
+        return {
+          ...old,
+          items: old.items.map((item) => item.id === asset.id
+            ? { ...item, products: item.products.map((product) => product.productId === v.productId ? { ...product, confirmed: v.confirmed } : product) }
+            : item),
+        };
+      });
+      return { snapshots };
+    },
+    onError: (err, _v, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      setError(errorMessage(err));
+    },
+    onSettled: refreshLibrary,
+  });
+  if (!shown.length && !error) return null;
+  return (
+    <div className="px-2 pb-2">
+      <div className="mt-1 flex flex-wrap items-center gap-1">
+        {shown.map((product) => {
+          const pending = product.confirmed === null;
+          return (
+            <span key={product.productId} className="inline-flex max-w-full items-center gap-0.5">
+              <Badge color={pending ? '#f59e0b' : '#22c55e'}>{product.product.name}{pending ? '?' : ''}</Badge>
+              {pending && (
+                <>
+                  <button
+                    type="button"
+                    title={`Confirm ${product.product.name}`}
+                    disabled={confirm.isPending}
+                    onClick={() => confirm.mutate({ productId: product.productId, confirmed: true })}
+                    className="rounded p-0.5 text-emerald-400 hover:bg-emerald-950 disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title={`Not ${product.product.name}`}
+                    disabled={confirm.isPending}
+                    onClick={() => confirm.mutate({ productId: product.productId, confirmed: false })}
+                    className="rounded p-0.5 text-rose-400 hover:bg-rose-950 disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      {error && <p className="mt-1 text-[10px] text-rose-400">{error}</p>}
+    </div>
+  );
 }
 
 /** Imported folders, so a whole folder can be kept out of AI without flagging each file. */
@@ -301,7 +427,7 @@ function BatchBar({ ids, items, products, onDone }: { ids: string[]; items: Asse
   };
 
   return (
-    <div className="mb-4 rounded-lg border border-indigo-800/60 bg-indigo-950/30 p-3">
+    <div className="rounded-lg border border-indigo-800/60 bg-indigo-950/30 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm">{selected.length} selected</span>
         <Button size="sm" variant="secondary" onClick={() => setMode(mode === 'tags' ? null : 'tags')}><Tag className="h-3.5 w-3.5" /> Add tags</Button>
@@ -408,7 +534,7 @@ function PublicUseFlag({ asset, holds, busy, onFlag, onRefresh }: {
   );
 }
 
-function AssetDrawer({ id, holds, onClose }: { id: string; holds: LibraryPath[]; onClose: () => void }) {
+function AssetDrawer({ id, holds, offset, onClose }: { id: string; holds: LibraryPath[]; offset: number; onClose: () => void }) {
   const navigate = useNavigate();
   const { data: asset } = useQuery({ queryKey: ['assets', 'one', id], queryFn: () => api.get<Asset>(`/library/assets/${id}`) });
   const products = useProducts();
@@ -459,7 +585,7 @@ function AssetDrawer({ id, holds, onClose }: { id: string; holds: LibraryPath[];
   };
 
   return (
-    <aside className="card sticky top-0 h-[calc(100vh-7rem)] w-96 shrink-0 overflow-y-auto">
+    <aside className="card sticky w-96 shrink-0 overflow-y-auto" style={{ top: offset, height: `calc(100vh - 7rem - ${offset}px)` }}>
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <span className="text-sm font-semibold">File details</span>
         <button onClick={onClose} className="text-slate-400 hover:text-slate-200"><X className="h-4 w-4" /></button>

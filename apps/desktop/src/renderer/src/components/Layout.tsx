@@ -140,7 +140,7 @@ export function Layout() {
           </nav>
         )}
       </header>
-      <main className="min-h-0 flex-1 overflow-auto px-8 py-6">
+      <main className={`min-h-0 flex-1 overflow-auto px-8 ${isLibraryPath(pathname) ? 'pb-6 pt-0' : 'py-6'}`}>
         <FinishSetupBanner />
         <LibraryFirstRunPrompt />
         <Outlet />

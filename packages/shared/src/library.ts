@@ -117,6 +117,51 @@ export function collapseLibraryImports<T extends { relPath: string; kind: Librar
   return list.filter((item) => !list.some((other) => other.kind === 'FOLDER' && isInsideImport(other.relPath, item.relPath)));
 }
 
+/**
+ * Product names shown under a library thumbnail.
+ * Rejected matches stay off the card. Every unconfirmed (orange) suggestion is included
+ * so confirm and reject can sit on that tag. Confirmed names fill a few remaining slots
+ * and do not get those buttons.
+ */
+export function libraryCardProductTags<T extends { confirmed: boolean | null }>(products: T[], confirmedLimit = 2): T[] {
+  const pending = products.filter((product) => product.confirmed === null);
+  const confirmed = products.filter((product) => product.confirmed === true).slice(0, confirmedLimit);
+  return [...pending, ...confirmed];
+}
+
+export type LibraryScanState = 'idle' | 'scanning' | 'paused' | 'busy' | 'error' | 'done' | 'cancelled';
+export type LibraryScanPhase = 'finding' | 'indexing';
+
+/** Progress for a library import. `found` is the walk total. `indexed` is how many of those are in the library. */
+export interface LibraryScanProgress {
+  state: LibraryScanState;
+  phase: LibraryScanPhase;
+  found: number;
+  indexed: number;
+  seen: number;
+  uploaded: number;
+  message?: string;
+}
+
+/**
+ * Width of the import bar, as a percent.
+ * The total is unknown while files are still being counted, so the bar stays indeterminate.
+ */
+export function libraryScanBar(phase: LibraryScanPhase, found: number, indexed: number): number | null {
+  if (phase === 'finding') return null;
+  if (found <= 0) return 100;
+  return Math.min(100, Math.round((indexed / found) * 100));
+}
+
+/**
+ * Files to drop after a scan.
+ * Cancel is not a finished walk: files the scanner has not reached stay in the library.
+ */
+export function missingAfterControlledScan(existing: { id: string; relPath: string }[], seenPaths: string[], releaseOnly: boolean): string[] {
+  if (releaseOnly) return [];
+  return missingAfterScan(existing, seenPaths);
+}
+
 /** Normalizes a path relative to the library root to forward slashes, so it is identical on every PC. */
 export function toRelPath(root: string, absolute: string): string {
   const norm = (s: string) => s.replace(/\\/g, '/').replace(/\/+$/, '');

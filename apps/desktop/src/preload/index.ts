@@ -1,12 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { LibraryStatus } from '@mh/shared';
+import type { LibraryScanProgress, LibraryStatus } from '@mh/shared';
 
-export interface ScanProgress {
-  state: 'idle' | 'scanning' | 'busy' | 'error' | 'done';
-  seen: number;
-  uploaded: number;
-  message?: string;
-}
+export type ScanProgress = LibraryScanProgress;
 
 /** The only bridge between the UI and Node/the file system. */
 const api = {
@@ -27,6 +22,9 @@ const api = {
       ipcRenderer.invoke('library:relocate', folder, moves),
     scan: (force?: boolean): Promise<ScanProgress> => ipcRenderer.invoke('library:scan', force),
     scanProgress: (): Promise<ScanProgress> => ipcRenderer.invoke('library:scanProgress'),
+    pauseScan: (): Promise<ScanProgress> => ipcRenderer.invoke('library:pauseScan'),
+    resumeScan: (): Promise<ScanProgress> => ipcRenderer.invoke('library:resumeScan'),
+    cancelScan: (): Promise<ScanProgress> => ipcRenderer.invoke('library:cancelScan'),
     open: (relPath: string): Promise<void> => ipcRenderer.invoke('library:open', relPath),
     reveal: (relPath: string): Promise<void> => ipcRenderer.invoke('library:reveal', relPath),
     upload: (assetId: string, relPath: string): Promise<unknown> => ipcRenderer.invoke('library:upload', assetId, relPath),

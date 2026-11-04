@@ -80,7 +80,7 @@ const approvals: FeatureHelp = {
 const library: FeatureHelp = {
   title: 'Library',
   purpose: 'The library is the photos and files the team is allowed to use, plus uploads from the connected Canva account.',
-  how: 'Shared drive holds the indexed Marketing & Media files. An admin sets that location once. Import the folders or files you want. Tag a file, assign a product, or mark it Not for public use so the AI skips it. The file stays visible to people, just grayed out. Select an image and choose Use in New Design to place it on a new graphic. The Canva tab browses folders and uploaded images from the connected Canva account. Canva does not list videos here yet. A manager connects Canva under Settings → Social accounts.',
+  how: 'Shared drive holds the indexed Marketing & Media files. An admin sets that location once. Import the folders or files you want. Search, filters, and the selection toolbar sit under the Studio menu and stay on screen while you scroll. While files are indexing, the bar there shows how many were found and how many are indexed. Pause holds the scan. Cancel stops it and keeps what is already indexed. Tag a file, assign a product, or mark it Not for public use so the AI skips it. The file stays visible to people, just grayed out. An orange product name under a thumbnail still needs a decision: the check confirms it and the X rejects it, then those buttons go away. Select an image and choose Use in New Design to place it on a new graphic. The Canva tab browses folders and uploaded images from the connected Canva account. Canva does not list videos here yet. A manager connects Canva under Settings → Social accounts.',
   why: 'Drive files stay on the shared share, and Canva uploads are reachable without leaving Mantis.',
 };
 

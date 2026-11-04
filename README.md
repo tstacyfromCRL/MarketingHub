@@ -151,9 +151,11 @@ A manager can return a post to the creator with a note. A failed publish can be 
 
 **Shared drive.** An admin sets the library location once: the top-level folder of the Marketing & Media network drive. Other PCs resolve that same share. If the drive is not mapped, Mantis says the drive was not found and to contact an admin.
 
-Anyone signed in can **Import folders** or **Import files**. Mantis indexes only those paths. The rest of the drive stays out of the library. A scan can take a while when it builds thumbnails; files show up in the grid as each batch finishes, not only when the scan ends.
+Anyone signed in can **Import folders** or **Import files**. Mantis indexes only those paths. The rest of the drive stays out of the library. A scan can take a while when it builds thumbnails; files show up in the grid as each batch finishes, not only when the scan ends. The bar under the Studio menu shows how many files were found and how many are indexed. Pause holds the scan. Cancel stops it. Files already indexed stay, and files the scan has not reached are left as they were.
 
-Select thumbnails to add tags, assign a product, or move files into a folder. Moving creates the folder on the shared drive and moves the real files. **Remove** drops a file from the Mantis index and leaves it on the drive. The same remove action is on the file details panel.
+Search, filters, import, and the selection toolbar sit directly under the Studio menu and stay there while the thumbnails scroll. Select thumbnails to add tags, assign a product, or move files into a folder. Moving creates the folder on the shared drive and moves the real files. **Remove** drops a file from the Mantis index and leaves it on the drive. The same remove action is on the file details panel.
+
+An orange product name under a thumbnail is a match the AI is not sure about. The check confirms it and the X rejects it. Those buttons leave once you decide. Open the file to change that decision or add a product yourself.
 
 **Not for public use** grays a file or an imported folder. The files stay in the library. AI does not tag them, match them to products, or place them in a generated graphic. Flag a folder from the folder row or from the file details. **Use in New Design** opens the studio editor with that image on a new graphic. The image is read from the shared drive on this PC.
 

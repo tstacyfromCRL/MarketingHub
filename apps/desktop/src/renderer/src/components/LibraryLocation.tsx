@@ -114,7 +114,7 @@ export function LibraryLocation() {
     }
   };
 
-  const scanning = progress?.state === 'scanning';
+  const scanning = progress?.state === 'scanning' || progress?.state === 'paused';
   const shownPath = status?.state === 'ok' ? status.path : location?.rootPath;
 
   return (
@@ -181,8 +181,10 @@ export function LibraryLocation() {
           </Button>
           {progress && progress.state !== 'idle' && (
             <span>
-              {progress.state === 'scanning' && `Scanning… ${progress.seen.toLocaleString()} files checked, ${progress.uploaded.toLocaleString()} new or updated`}
-              {progress.state === 'done' && (progress.message ?? `Last scan: ${progress.seen.toLocaleString()} files, ${progress.uploaded.toLocaleString()} new or updated`)}
+              {progress.state === 'scanning' && `${progress.found.toLocaleString()} found, ${progress.indexed.toLocaleString()} indexed`}
+              {progress.state === 'paused' && `Paused · ${progress.found.toLocaleString()} found, ${progress.indexed.toLocaleString()} indexed`}
+              {progress.state === 'cancelled' && (progress.message ?? 'Import cancelled.')}
+              {progress.state === 'done' && (progress.message ?? `Last scan: ${progress.found.toLocaleString()} files, ${progress.uploaded.toLocaleString()} new or updated`)}
               {progress.state === 'busy' && (progress.message ?? 'Another team member is scanning the library right now.')}
               {progress.state === 'error' && <span className="text-rose-400">{progress.message}</span>}
             </span>
