@@ -52,6 +52,37 @@ model User {
   contentDocs      ContentDoc[]
   socialAccounts   SocialAccount[]
   canvaAccounts    CanvaAccount[]
+  assistantThreads AssistantThread[]
+}
+
+/// A conversation with the Mantis assistant. Each person sees only their own.
+model AssistantThread {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  messages  AssistantMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+/// One line in an assistant conversation. Tool calls are not stored; what they made is in actions.
+model AssistantMessage {
+  id        String          @id @default(cuid())
+  threadId  String
+  thread    AssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  /// user or assistant
+  role      String
+  content   String
+  /// Links to what the assistant created or changed: [{ kind, label, link }]
+  actions   Json            @default("[]")
+  /// Without an AI key, the earlier sentence when the reply asked for a missing detail.
+  context   String?
+  createdAt DateTime        @default(now())
+
+  @@index([threadId, createdAt])
 }
 
 /// One-time sign-up code an admin hands to a new team member; the code decides their role.

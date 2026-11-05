@@ -1,7 +1,7 @@
 import { nativeImage, type WebContents } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assetKindForPath, toRelPath, type AssetKind, type LibraryScanProgress } from '@mh/shared';
+import { assetKindForPath, shellThumbnailBlocksUi, toRelPath, type AssetKind, type LibraryScanProgress } from '@mh/shared';
 import { api, ApiError } from './api';
 import { checkAccess, currentStatus } from './library';
 import { store } from './store';
@@ -15,6 +15,13 @@ const RESCAN_MS = 30 * 60_000;
 let running = false;
 /** run keeps walking. pause waits between files. cancel stops without marking unseen files missing. */
 let control: 'run' | 'pause' | 'cancel' = 'run';
+/** Typing keeps the scan from starting another thumbnail until the person has paused. */
+let quietUntil = 0;
+
+/** The window calls this on each keystroke so a scan does not start a blocking thumbnail mid-word. */
+export function noteUserActivity() {
+  quietUntil = Date.now() + 700;
+}
 let progress: ScanProgress = { state: 'idle', phase: 'finding', found: 0, indexed: 0, seen: 0, uploaded: 0 };
 let sink: WebContents | null = null;
 
@@ -70,11 +77,12 @@ async function* walk(dir: string): AsyncGenerator<string> {
   }
 }
 
-/** Shell thumbnails for PSDs/videos can hang for minutes; skip after a short wait so the scan keeps moving. */
+/** Shell thumbnails for ordinary photos. Design files and video are skipped: see shellThumbnailBlocksUi. */
 const THUMB_MS = 4_000;
 
 async function thumbnail(file: string, kind: AssetKind): Promise<string | undefined> {
   if (kind !== 'IMAGE' && kind !== 'VIDEO') return undefined;
+  if (shellThumbnailBlocksUi(file)) return undefined;
   try {
     // Uses the Windows shell thumbnail provider, so it covers photos, PSDs and videos alike.
     const img = await Promise.race([
@@ -132,6 +140,18 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
       emit({ state: 'done', phase: 'indexing', found: 0, indexed: 0, seen: 0, uploaded: 0, message: 'Nothing is imported yet. Import folders or files first.' });
       return progress;
     }
+
+    // Let queued keystrokes through before the next thumbnail, and wait out a word the person is typing.
+    const yieldToTyping = async () => {
+      await new Promise((resolve) => setImmediate(resolve));
+      while (Date.now() < quietUntil && control === 'run') {
+        if (Date.now() - renewed.at > 60_000) {
+          await api('POST', '/library/lease/renew', { leaseToken });
+          renewed.at = Date.now();
+        }
+        await wait(50);
+      }
+    };
 
     // Pause holds the lease. Cancel releases it and leaves files the walk has not reached alone.
     const hold = async (): Promise<'run' | 'cancel'> => {
@@ -207,6 +227,7 @@ export async function scanLibrary(opts: { force?: boolean } = {}): Promise<ScanP
       const prev = known.get(relPath.toLowerCase());
       const wantsThumb = kind === 'IMAGE' || kind === 'VIDEO';
       const unchanged = prev && prev.size === stat.size && Math.abs(prev.mtime - stat.mtimeMs) < 2000 && (prev.thumb || !wantsThumb);
+      if (wantsThumb && !unchanged) await yieldToTyping();
       if (unchanged) {
         indexed += 1;
         if (indexed % 25 === 0) emit({ phase: 'indexing', indexed, seen: indexed });

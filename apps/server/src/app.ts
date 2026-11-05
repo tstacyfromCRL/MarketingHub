@@ -28,6 +28,7 @@ import { canvaRoutes } from './routes/canva';
 import { adminRoutes } from './routes/admin';
 import { onboardingRoutes } from './routes/onboarding';
 import { promptRoutes } from './routes/prompt';
+import { assistantRoutes } from './routes/assistant';
 
 (BigInt.prototype as unknown as { toJSON: () => number }).toJSON = function (this: bigint) {
   return Number(this);
@@ -81,6 +82,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(adminRoutes);
   await app.register(onboardingRoutes);
   await app.register(promptRoutes);
+  await app.register(assistantRoutes);
 
   return app;
 }

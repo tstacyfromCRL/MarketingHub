@@ -148,7 +148,7 @@ function finishTask(task: { title: string; assignee: string | null; when: string
   return { kind: 'task', title: task.title, assigneeId: found.person.id, assigneeName: found.person.name, when: task.when };
 }
 
-function matchPerson(query: string, people: Person[]): { kind: 'one'; person: Person } | { kind: 'many'; names: string[] } | { kind: 'none' } {
+export function matchPerson<P extends Person>(query: string, people: P[]): { kind: 'one'; person: P } | { kind: 'many'; names: string[] } | { kind: 'none' } {
   const needle = query.trim().toLowerCase();
   const hits = people.filter((person) => {
     const full = person.name.toLowerCase();

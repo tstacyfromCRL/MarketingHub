@@ -5,7 +5,7 @@ import path from 'node:path';
 import { autoUpdater } from 'electron-updater';
 import { api } from './api';
 import { checkAccess, getLocation, importPaths, relocateFiles, resolveAsset, selectLocation } from './library';
-import { cancelLibraryScan, pauseLibraryScan, resumeLibraryScan, scanLibrary, scanProgress, setProgressSink, startScheduledScans } from './indexer';
+import { cancelLibraryScan, noteUserActivity, pauseLibraryScan, resumeLibraryScan, scanLibrary, scanProgress, setProgressSink, startScheduledScans } from './indexer';
 import { store } from './store';
 
 let win: BrowserWindow | null = null;
@@ -111,6 +111,7 @@ function createWindow() {
 
 function registerIpc() {
   // ---- Session ----
+  ipcMain.on('app:activity', () => noteUserActivity());
   ipcMain.handle('session:get', () => ({ serverUrl: store.get('serverUrl'), token: store.getToken() }));
   ipcMain.handle('session:set', (_e, s: { serverUrl?: string; token?: string | null }) => {
     if (s.serverUrl) store.set('serverUrl', s.serverUrl.replace(/\/+$/, ''));

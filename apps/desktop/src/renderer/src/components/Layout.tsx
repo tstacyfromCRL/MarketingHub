@@ -12,7 +12,7 @@ import { useRealtime } from '../lib/realtime';
 import { timeAgo } from '../lib/format';
 import type { Notification } from '../lib/types';
 import { LibraryFirstRunPrompt } from './LibraryLocation';
-import { PromptBar } from './PromptBar';
+import { AssistantPanel } from './AssistantPanel';
 
 /** The top bar. Studio covers the making of content. Knowledge is its own item. Settings stays on the gear. */
 const NAV = [
@@ -145,7 +145,7 @@ export function Layout() {
         <LibraryFirstRunPrompt />
         <Outlet />
       </main>
-      <PromptBar />
+      <AssistantPanel />
     </div>
   );
 }

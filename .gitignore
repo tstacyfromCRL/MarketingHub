@@ -7,3 +7,5 @@ release/
 *.log
 .data/
 packages/db/.pglite/
+packages/db/.pglite-backups/
+packages/db/.pglite-unopenable-*/

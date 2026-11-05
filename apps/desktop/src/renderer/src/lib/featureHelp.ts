@@ -17,7 +17,7 @@ interface Topic {
 const home: FeatureHelp = {
   title: 'Home',
   purpose: 'Home is your starting point after you sign in. It shows what is waiting on you.',
-  how: 'Look at posts that need you, your tasks, and what is coming up. Open any item to work on it. The box at the bottom of the screen can start a draft or a task from a sentence. A banner here also brings you back to company setup if that is unfinished.',
+  how: 'Look at posts that need you, your tasks, and what is coming up. Open any item to work on it. The chat at the bottom of the screen is a conversation with Mantis: ask a question, start a draft or a task, or have a post rewritten from your notes. Click the box to open the conversation. Mantis asks when it needs a detail, and it never approves, publishes, or deletes. A banner here also brings you back to company setup if that is unfinished.',
   why: 'You can see the work that needs a person before you go looking through the other screens.',
 };
 
@@ -38,14 +38,14 @@ const tasks: FeatureHelp = {
 const studio: FeatureHelp = {
   title: 'Content',
   purpose: 'Content is where you draft one post, email, blog, or documentation page.',
-  how: 'On Social post, describe the idea, then Write with AI for a tagline, sub-tagline, and post copy you can edit. Choose a library photo and a Canva brand template. Create draft & edit in Canva fills the photo plus the first two text fields and opens Canva to refine. Click Return in Canva and the post preview updates to that finished graphic. Approve the draft; a manager schedules it. On Graphics, New from Canva works the same for standalone designs. Emails, blogs, and docs still start from a brief on their own tab.',
+  how: 'On Social post, describe the idea, then Write with AI for a tagline, sub-tagline, and post copy you can edit. Choose a library photo and a Canva brand template. Create draft & edit in Canva fills the photo plus the first two text fields and opens Canva to refine. Click Return in Canva and the post preview updates to that finished graphic. Drafts lists those posts and their graphics until someone sends them for approval. Edit opens the post. Download saves a zip that opens as a folder named after the post, with the graphic as a PNG and the copy as a text file. Delete asks before it removes the draft. Approve the draft; a manager schedules it. On Graphics, New from Canva works the same for standalone designs. Emails, blogs, and docs still start from a brief on their own tab.',
   why: 'The draft starts from your brand and knowledge base, and the graphic is finished in Canva before it is scheduled.',
 };
 
 const post: FeatureHelp = {
   title: 'Post',
   purpose: 'This is one post, from the first draft through publishing.',
-  how: 'Edit the words and check the warnings. Attach or open the graphic. Move the post through approval. A manager can send it back with a note. After approval it can be scheduled. Nothing posts until a manager has approved it.',
+  how: 'Edit the words and check the warnings. Rewrite with notes opens the chat on this post so you can say what to change. Attach or open the graphic. Move the post through approval. A manager can send it back with a note. After approval it can be scheduled. Nothing posts until a manager has approved it.',
   why: 'This is the record of what will actually go out, and who still needs to say yes.',
 };
 
@@ -80,7 +80,7 @@ const approvals: FeatureHelp = {
 const library: FeatureHelp = {
   title: 'Library',
   purpose: 'The library is the photos and files the team is allowed to use, plus uploads from the connected Canva account.',
-  how: 'Shared drive holds the indexed Marketing & Media files. An admin sets that location once. Import the folders or files you want. Search, filters, and the selection toolbar sit under the Studio menu and stay on screen while you scroll. While files are indexing, the bar there shows how many were found and how many are indexed. Pause holds the scan. Cancel stops it and keeps what is already indexed. Tag a file, assign a product, or mark it Not for public use so the AI skips it. The file stays visible to people, just grayed out. An orange product name under a thumbnail still needs a decision: the check confirms it and the X rejects it, then those buttons go away. Select an image and choose Use in New Design to place it on a new graphic. The Canva tab browses folders and uploaded images from the connected Canva account. Canva does not list videos here yet. A manager connects Canva under Settings → Social accounts.',
+  how: 'Shared drive holds the indexed Marketing & Media files. An admin sets that location once. Import the folders or files you want. Search, filters, and the selection toolbar sit under the Studio menu and stay on screen while you scroll. While files are indexing, the bar there shows how many were found and how many are indexed. Photos get a thumbnail; design files and videos are indexed without one so typing does not freeze. Typing pauses the next thumbnail until you stop. Pause holds the scan. Cancel stops it and keeps what is already indexed. Tag a file, assign a product, or mark it Not for public use so the AI skips it. The file stays visible to people, just grayed out. An orange product name under a thumbnail still needs a decision: the check confirms it and the X rejects it, then those buttons go away. Select an image and choose Use in New Design to place it on a new graphic. The Canva tab browses folders and uploaded images from the connected Canva account. Canva does not list videos here yet. A manager connects Canva under Settings → Social accounts.',
   why: 'Drive files stay on the shared share, and Canva uploads are reachable without leaving Mantis.',
 };
 

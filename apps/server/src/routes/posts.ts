@@ -16,9 +16,12 @@ import {
 import {
   adaptCopyForPlatforms,
   applyPostAction,
+  buildDraftPack,
   getDefaultOrgId,
   composeDesign,
+  draftGraphicSlots,
   recordEvent,
+  renderDesignFile,
   saveDesign,
   storage,
   verifyMediaSignature,
@@ -96,6 +99,43 @@ export async function postRoutes(app: FastifyInstance) {
         orderBy: [{ scheduledAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
         take: 300,
       });
+    });
+
+    /**
+     * Studio drafts page: graphic PNG and post copy, in a folder named after the post.
+     * Only drafts, because anything already sent for approval is no longer this page's work.
+     */
+    auth.get<{ Params: { id: string } }>('/posts/:id/draft-pack', async (req, reply) => {
+      const post = await prisma.post.findUnique({ where: { id: req.params.id }, include: { variants: { orderBy: { platform: 'asc' } } } });
+      if (!post) throw notFound('Post not found');
+      if (post.status !== 'DRAFT') throw badRequest('This post has already been sent for approval.');
+      const variants = post.variants.map((variant) => ({
+        platform: variant.platform,
+        label: PLATFORM_PRESETS[variant.platform as Platform]?.label ?? variant.platform,
+        body: variant.body,
+        designId: variant.designId,
+      }));
+      const slots = draftGraphicSlots({ designId: post.designId, variants });
+      const pngByDesignId = new Map<string, Buffer>();
+      for (const slot of slots) {
+        if (pngByDesignId.has(slot.designId)) continue;
+        const rendered = await renderDesignFile(slot.designId, 'png');
+        pngByDesignId.set(slot.designId, rendered.body);
+      }
+      const pack = buildDraftPack({ title: post.title, body: post.body, designId: post.designId, variants, pngByDesignId });
+      await recordEvent({
+        actorId: req.user.id,
+        verb: 'export',
+        entityType: 'post',
+        entityId: post.id,
+        summary: `Draft "${post.title}" downloaded by ${req.user.name}`,
+        link: `/posts/${post.id}`,
+      });
+      reply.header('Content-Type', 'application/zip');
+      // The folder inside the zip keeps the post title. The download name stays ASCII so the header is valid.
+      const downloadName = pack.filename.replace(/[^\x20-\x7E]+/g, ' ').replace(/"/g, '').trim() || 'draft.zip';
+      reply.header('Content-Disposition', `attachment; filename="${downloadName}"`);
+      return reply.send(pack.body);
     });
 
     auth.get<{ Params: { id: string } }>('/posts/:id', async (req) => {

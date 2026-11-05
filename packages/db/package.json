@@ -13,6 +13,8 @@
     "studio": "dotenv -e ../../.env -- prisma studio",
     "seed": "dotenv -e ../../.env -- tsx src/seed.ts",
     "dev-db": "tsx scripts/dev-db.ts",
+    "restore-db": "tsx scripts/restore-db.ts",
+    "test": "node --import tsx --test scripts/pgliteBackup.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

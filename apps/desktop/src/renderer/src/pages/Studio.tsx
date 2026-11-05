@@ -1,29 +1,35 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { FileText, FolderPlus, Image as ImageIcon, Plus, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { Download, FileText, FolderPlus, Image as ImageIcon, Pencil, Plus, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import { PLATFORMS, PLATFORM_PRESETS, type ContentType, type Platform } from '@mh/shared';
-import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
+import { api, download, errorMessage, fileUrl, queryClient } from '../lib/api';
 import { formatDate, fromLocalInput } from '../lib/format';
 import { useProducts } from '../lib/hooks';
 import type { Asset, Post } from '../lib/types';
 import { Button, Card, Empty, ErrorText, Field, PageHeader, Spinner, Tabs } from '../components/ui';
 import { CanvaGraphicModal } from '../components/Canva';
 
-type Tab = 'post' | 'write' | 'designs';
+type Tab = 'post' | 'drafts' | 'write' | 'designs';
 
 export function StudioPage() {
   const [params, setParams] = useSearchParams();
   const tab = (params.get('tab') as Tab) ?? 'post';
   return (
     <div>
-      <PageHeader title="Content studio" subtitle="Create ad hoc posts, long-form content and graphics, grounded in the knowledge base." />
+      <PageHeader title="Content studio" subtitle="Create ad hoc posts, long-form content and graphics, grounded in the knowledge base. Drafts holds posts that have not been sent for approval." />
       <Tabs<Tab>
         value={tab}
         onChange={(t) => setParams({ tab: t })}
-        tabs={[{ id: 'post', label: 'Social post' }, { id: 'write', label: 'Emails, blogs & docs' }, { id: 'designs', label: 'Graphics' }]}
+        tabs={[
+          { id: 'post', label: 'Social post' },
+          { id: 'drafts', label: 'Drafts' },
+          { id: 'write', label: 'Emails, blogs & docs' },
+          { id: 'designs', label: 'Graphics' },
+        ]}
       />
       {tab === 'post' && <NewPost />}
+      {tab === 'drafts' && <Drafts />}
       {tab === 'write' && <Writer />}
       {tab === 'designs' && <Designs />}
     </div>
@@ -286,6 +292,94 @@ function NewPost() {
           Mantis fills the template, opens Canva for you to refine it, then saves the finished graphic when you return. Approve the draft and a manager schedules it.
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Posts still in draft, with the graphic and the copy, before anyone sends them for approval. */
+function Drafts() {
+  const navigate = useNavigate();
+  const posts = useQuery({
+    queryKey: ['posts', 'studio-drafts'],
+    queryFn: () => api.get<Post[]>('/posts?status=DRAFT'),
+  });
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/posts/${id}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['posts'] });
+    },
+    onError: (err) => setError(errorMessage(err)),
+  });
+  const ordered = [...(posts.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const savePack = async (post: Post) => {
+    setDownloading(post.id);
+    setError(null);
+    try {
+      // The zip's root folder is the post title. Inside it: graphic PNG and copy.txt.
+      await download(`/posts/${post.id}/draft-pack`, `${post.title}.zip`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  if (posts.isLoading) return <Spinner />;
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-400">
+        Generated posts stay here until they are sent for approval. Download saves a zip. Open it to get a folder named after the post, with the graphic as a PNG and the copy as a text file.
+      </p>
+      <ErrorText error={error ?? (posts.error ? errorMessage(posts.error) : null)} />
+      {!ordered.length ? <Empty>No drafts yet. A post shows up here after it is created, and leaves once it is sent for approval.</Empty> : (
+        <div className="space-y-4">
+          {ordered.map((post) => {
+            const preview = post.design?.previewKey ?? post.variants.find((variant) => variant.design?.previewKey)?.design?.previewKey;
+            return (
+              <div key={post.id} className="card grid gap-4 p-4 md:grid-cols-[220px_1fr]">
+                <Link to={`/posts/${post.id}`} className="flex aspect-square items-center justify-center overflow-hidden rounded bg-slate-900">
+                  {preview ? <img src={fileUrl(preview)} alt="" className="max-h-full max-w-full object-contain" /> : <ImageIcon className="h-10 w-10 text-slate-700" />}
+                </Link>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link to={`/posts/${post.id}`} className="text-lg text-mist hover:underline">{post.title}</Link>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {post.platforms.map((platform) => PLATFORM_PRESETS[platform].label).join(', ')}
+                        {' · '}{post.creator.name}{' · '}{formatDate(post.createdAt)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => navigate(`/posts/${post.id}`)}>
+                        <Pencil className="h-4 w-4" /> Edit
+                      </Button>
+                      <Button size="sm" variant="secondary" loading={downloading === post.id} onClick={() => void savePack(post)}>
+                        <Download className="h-4 w-4" /> Download
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        loading={remove.isPending && remove.variables === post.id}
+                        onClick={() => {
+                          if (window.confirm(`Delete "${post.title}"?`)) remove.mutate(post.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete
+                      </Button>
+                    </div>
+                  </div>
+                  {post.reviewNote && <p className="mt-2 text-xs text-amber-100">Returned: {post.reviewNote}</p>}
+                  {!preview && <p className="mt-2 text-xs text-slate-500">No graphic yet. The download still includes the copy.</p>}
+                  <p className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap text-sm text-slate-300">{post.body || 'No copy yet.'}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

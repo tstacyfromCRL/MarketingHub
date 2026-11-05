@@ -304,6 +304,35 @@ export async function adaptCopyForPlatforms(orgId: string, body: string, platfor
   return { variants, warnings };
 }
 
+/**
+ * Rewrites existing copy from a person's notes. Uses the same brand voice, knowledge, and claims as
+ * a fresh draft, so a revision cannot drift into facts the company has not approved.
+ */
+export async function rewriteCopy(input: { orgId?: string; body: string; notes: string; platform?: Platform }): Promise<{ text: string; warnings: OutputWarning[] }> {
+  const orgId = input.orgId ?? (await getDefaultOrgId());
+  const ctx = await buildBrandContext(orgId, `${input.notes}\n${input.body}`, [], input.platform);
+  const playbook = await selectPlaybook(orgId, input.platform, 'SOCIAL_POST');
+  const limit = playbook?.maxChars ?? (input.platform ? PLATFORM_PRESETS[input.platform].maxChars : undefined);
+  const text = await generateText({
+    system: ctx.system,
+    maxTokens: 1200,
+    prompt: [
+      'Rewrite this social post following the notes. Keep what the notes do not ask to change. Return only the new post copy, with no preamble.',
+      input.platform && `Platform: ${PLATFORM_PRESETS[input.platform].label}.${limit ? ` Stay under ${limit} characters.` : ''}`,
+      playbook?.hashtagMin != null && `Use between ${playbook.hashtagMin} and ${playbook.hashtagMax ?? playbook.hashtagMin} hashtags.`,
+      knowledgeBlock(ctx.facts),
+      claimBlock(ctx.claims),
+      `Notes: ${input.notes}`,
+      `Current post:\n${input.body}`,
+    ].filter(Boolean).join('\n\n'),
+    mock: () => `${input.body.trim()}\n\n(Revised: ${input.notes.trim()})`,
+  });
+  const cleaned = text.trim();
+  const warnings = validateOutput(cleaned, warningContext(ctx, playbook, limit));
+  if (ctx.droppedInternal) warnings.push({ code: 'INTERNAL_OMITTED', message: 'Internal knowledge was left out because this draft used a cloud model.' });
+  return { text: limit ? cleaned.slice(0, limit) : cleaned, warnings };
+}
+
 export interface PostIdea {
   title: string;
   body: string;

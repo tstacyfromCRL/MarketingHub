@@ -5,12 +5,28 @@ import { crc32, inflateRawSync } from 'node:zlib';
 /** Writes a folder as a zip (stored, not compressed) so a pack can be downloaded. */
 export async function zipDirectory(dir: string): Promise<Buffer> {
   const files = await walk(dir);
+  const entries: { name: string; data: Buffer }[] = [];
+  for (const file of files) {
+    entries.push({ name: path.relative(dir, file).replace(/\\/g, '/'), data: await readFile(file) });
+  }
+  return zipEntries(entries);
+}
+
+/**
+ * Zip of named files. Names may include folders (`Post title/graphic.png`) so a download
+ * can unpack as a folder instead of loose files. Stored, not compressed.
+ */
+export function zipEntries(entries: { name: string; data: Buffer }[]): Buffer {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
-  for (const file of files) {
-    const name = Buffer.from(path.relative(dir, file).replace(/\\/g, '/'));
-    const data = await readFile(file);
+  for (const entry of entries) {
+    const cleaned = entry.name.replace(/\\/g, '/');
+    if (!cleaned || cleaned.startsWith('/') || cleaned.split('/').includes('..')) {
+      throw new Error(`Unsafe path in zip: ${entry.name}`);
+    }
+    const name = Buffer.from(cleaned);
+    const data = entry.data;
     const local = localHeader(name, data);
     locals.push(local, data);
     centrals.push(centralHeader(name, data, offset));
@@ -19,8 +35,8 @@ export async function zipDirectory(dir: string): Promise<Buffer> {
   const central = Buffer.concat(centrals);
   const eocd = Buffer.alloc(22);
   eocd.writeUInt32LE(0x06054b50, 0);
-  eocd.writeUInt16LE(files.length, 8);
-  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
   eocd.writeUInt32LE(central.length, 12);
   eocd.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, central, eocd]);

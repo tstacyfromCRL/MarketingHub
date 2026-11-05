@@ -57,6 +57,9 @@ const schema = z.object({
   OPENAI_EMBED_MODEL: z.string().default('text-embedding-3-small'),
   ANTHROPIC_API_KEY: optional,
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5'),
+  /** Optional model for the chat assistant only. Empty uses OPENAI_TEXT_MODEL / ANTHROPIC_MODEL. */
+  OPENAI_ASSISTANT_MODEL: optional,
+  ANTHROPIC_ASSISTANT_MODEL: optional,
   /**
    * OpenAI-compatible server (Ollama's /v1, or vLLM). Qwen2.5 7B Instruct is Apache-2.0 and fits
    * about 8 GB at 4-bit; use qwen2.5:14b when the GPU has about 12 GB. nomic-embed-text is 768-d.

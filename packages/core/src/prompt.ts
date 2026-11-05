@@ -2,8 +2,8 @@ import { prisma, type Prisma } from '@mh/db';
 import { PLATFORM_PRESETS } from '@mh/shared';
 import { bus } from './bus';
 import { generateContent } from './generation';
-import { notify } from './notify';
 import { recordEvent } from './activity';
+import { createBoardTask } from './tasks';
 import { generateText } from './ai/providers';
 import { intentFromModel, interpretPrompt, resolveWhen, withFollowUp, type Person, type PromptIntent } from './promptIntent';
 
@@ -67,35 +67,8 @@ async function interpretWithModel(text: string, people: Person[]): Promise<Promp
 }
 
 async function createTask(intent: Extract<PromptIntent, { kind: 'task' }>, actorId: string, actorName: string): Promise<WorkflowPromptResult> {
-  const board = await prisma.board.findFirst({ orderBy: { id: 'asc' }, include: { stages: { orderBy: { order: 'asc' } } } });
-  const stage = board?.stages.find((row) => row.name.toLowerCase() === 'to do') ?? board?.stages[0];
-  if (!board || !stage) return { reply: 'The task board is not set up yet.', needsDetail: false };
   const due = resolveWhen(intent.when, new Date());
-  const last = await prisma.task.aggregate({ where: { stageId: stage.id }, _max: { order: true } });
-  const task = await prisma.task.create({
-    data: {
-      boardId: board.id,
-      stageId: stage.id,
-      title: intent.title,
-      description: '',
-      assigneeId: intent.assigneeId,
-      dueDate: due,
-      creatorId: actorId,
-      order: (last._max.order ?? 0) + 1000,
-    },
-  });
-  await recordEvent({
-    actorId,
-    verb: 'create',
-    entityType: 'task',
-    entityId: task.id,
-    link: `/tasks/${task.id}`,
-    summary: `Task "${task.title}" created by ${actorName}${intent.assigneeName ? ` and assigned to ${intent.assigneeName}` : ''} from a prompt`,
-  });
-  if (intent.assigneeId) {
-    await notify([intent.assigneeId], { title: 'New task assigned to you', body: `${actorName} assigned you "${task.title}".`, link: `/tasks/${task.id}` }, actorId);
-  }
-  bus.publish({ userId: '*', type: 'task', payload: { id: task.id } });
+  const task = await createBoardTask({ title: intent.title, assigneeId: intent.assigneeId, dueDate: due, actorId, actorName, via: 'from a prompt' });
   const who = intent.assigneeName ? ` for ${intent.assigneeName}` : '';
   const when = due ? `, due ${formatWhen(due)}` : '';
   return { reply: `Created a task${who}${when}: ${task.title}. It is in To Do.`, link: `/tasks/${task.id}`, linkLabel: 'Open the task', needsDetail: false };

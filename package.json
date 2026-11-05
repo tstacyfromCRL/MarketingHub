@@ -15,6 +15,7 @@
     "db:generate": "pnpm --filter @mh/db generate",
     "db:migrate": "pnpm --filter @mh/db migrate",
     "db:deploy": "pnpm --filter @mh/db run migrate:deploy",
+    "db:restore": "pnpm --filter @mh/db restore-db",
     "db:seed": "pnpm --filter @mh/db seed",
     "kb:import": "pnpm --filter @mh/server exec tsx ../../scripts/kb-import.ts",
     "kb:export": "pnpm --filter @mh/server exec tsx ../../scripts/kb-export.ts",

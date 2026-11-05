@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { libraryCardProductTags, libraryScanBar, missingAfterControlledScan, missingAfterScan } from './library';
+import { libraryCardProductTags, libraryScanBar, missingAfterControlledScan, missingAfterScan, shellThumbnailBlocksUi } from './library';
 
 describe('missingAfterScan', () => {
   const existing = [
@@ -34,6 +34,15 @@ describe('missingAfterScan', () => {
     expect(libraryScanBar('indexing', 10, 4)).toBe(40);
     expect(libraryScanBar('indexing', 10, 10)).toBe(100);
     expect(libraryScanBar('indexing', 10, 12)).toBe(100);
+  });
+
+  it('skips shell thumbnails for design files and video, which freeze typing on Windows', () => {
+    expect(shellThumbnailBlocksUi('Brand/logo.psd')).toBe(true);
+    expect(shellThumbnailBlocksUi('Brand/logo.PSD')).toBe(true);
+    expect(shellThumbnailBlocksUi('Film/booth.mp4')).toBe(true);
+    expect(shellThumbnailBlocksUi('Photos/hero.jpg')).toBe(false);
+    expect(shellThumbnailBlocksUi('Photos/hero.png')).toBe(false);
+    expect(shellThumbnailBlocksUi('Notes/brief.pdf')).toBe(false);
   });
 
   it('keeps unseen files when an import is cancelled', () => {

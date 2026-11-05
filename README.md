@@ -77,7 +77,7 @@ Apply migrations after the database is listening (start **Dev database (PGlite)*
 pnpm db:deploy
 ```
 
-PGlite has no shadow database, so new migrations are applied with `pnpm db:deploy`, not `pnpm db:migrate`.
+PGlite has no shadow database, so new migrations are applied with `pnpm db:deploy`, not `pnpm db:migrate`. Do not point `prisma migrate diff --shadow-database-url` at this database. Prisma drops its shadow database, which deletes the company.
 
 ## Starting the app
 
@@ -102,6 +102,8 @@ pnpm dev:desktop
 
 Start the database first and wait until it prints that it is listening.
 
+The dev database writes a snapshot of itself to `packages/db/.pglite-backups` a few seconds after it starts, then every minute, and again when you stop it with Ctrl+C. That snapshot is taken by the running database, so it can be loaded after a hard stop. Copying the `.pglite` folder, including Previous Versions, cannot. Stop the database with Ctrl+C. `taskkill /F` skips the final snapshot and the checkpoint, and the folder will not open afterward. When that happens, stop the database and run `pnpm db:restore`. It loads the newest snapshot into a new folder and keeps the broken folder beside it. Set `DEV_DB_BACKUP_MS=0` to turn snapshots off.
+
 On the sign-in screen, **Connection settings** must be `http://localhost:4000`. Port 5173 is the dev UI, not the API. If the address is wrong, Login and Create Account stay disabled.
 
 ## Using Mantis
@@ -122,13 +124,13 @@ If the server is unreachable, those buttons stay disabled. Open Connection setti
 
 ### Screens
 
-After sign-in, the mantis icon sits at the left of the top bar. The top row is Home, Calendar, Tasks, Studio, and Knowledge. Settings is the gear icon. The icon links back to Home. The question mark at the right of that row explains the screen you are on: what it is for, how to use it, and why it matters. The same control is on the sign-in screen and on company setup. On Knowledge and Settings it follows the tab you have open. A text box at the bottom of signed-in screens can start a post draft or a task from a plain sentence, such as a LinkedIn post for next week or a task for a teammate tomorrow. It asks when a name or network is unclear. It does not publish, approve, or delete. Those stay on their buttons. Set `AI_TEXT_PROVIDER=openai` and `OPENAI_API_KEY` when you want wording beyond those examples. With `mock`, the two example shapes still work.
+After sign-in, the mantis icon sits at the left of the top bar. The top row is Home, Calendar, Tasks, Studio, and Knowledge. Settings is the gear icon. The icon links back to Home. The question mark at the right of that row explains the screen you are on: what it is for, how to use it, and why it matters. The same control is on the sign-in screen and on company setup. On Knowledge and Settings it follows the tab you have open. A chat panel sits at the bottom of signed-in screens. It is a conversation with Mantis, like ChatGPT: each message carries the earlier ones, and it knows the screen you have open. It can answer questions from the knowledge base, start post drafts, rewrite a post from your notes, and create or update tasks for teammates. When it needs a detail, such as who a task is for or when it is due, it asks. It does not publish, approve, schedule, archive, or delete. Those stay on their buttons. On a post, **Rewrite with notes** opens the chat on that post. The trash icon in the chat header deletes the open conversation. Replies need an OpenAI or Anthropic key (see AI below). Without one, the panel only starts one draft or one task at a time.
 
 - **Home** is the view after sign-in.
 - **Calendar** holds scheduled posts and team events.
 - **Tasks** is a kanban board (Backlog, To Do, In Progress, Review, Done). Each card can move to the next stage, be edited, be archived, or be deleted. Archive keeps the task and takes it off the board; Archived in the filter brings it back. Delete asks first.
 - **Studio** is where content is made. Its row is Content, Campaigns, Approvals, Library, and Brand.
-  - **Content** drafts a single post, email, blog, or documentation page from a brief. AI uses the brand profile and retrieved knowledge. On **Social post**, the flow is: describe the idea → Write with AI (editable tagline, sub-tagline, and post copy) → pick a library photo and a Canva brand template → Create draft & edit in Canva. Mantis fills the photo into the image data field, the tagline into the first text data field, and the sub-tagline into the second, then opens Canva. When Canva sends the person back, Mantis saves a PNG on the post graphic and the open post updates to that finished design. Approve the draft; a manager sets the time and schedules it. The Graphics tab lists saved graphics. Select several to delete them, move them into a folder, or tag them with products. Deleting a folder leaves the graphics under Unfiled. A graphic on a scheduled or posted item is left in place. **New from Canva** creates a standalone design the same way (tagline, sub-tagline, photo, template, or a blank design). **Edit in Canva** opens an existing Canva graphic again. A manager connects the Canva account under Settings → Social accounts. `CANVA_CLIENT_ID` and `CANVA_CLIENT_SECRET` go in `.env`. In the Canva developer portal, the redirect URL is `{PUBLIC_API_URL}/canva/callback` and the return URL is `{PUBLIC_API_URL}/canva/return`. Brand templates and autofill need a Canva plan that includes them. Templates need two text data fields and an image data field for the full social-post fill.
+  - **Content** drafts a single post, email, blog, or documentation page from a brief. AI uses the brand profile and retrieved knowledge. On **Social post**, the flow is: describe the idea → Write with AI (editable tagline, sub-tagline, and post copy) → pick a library photo and a Canva brand template → Create draft & edit in Canva. Mantis fills the photo into the image data field, the tagline into the first text data field, and the sub-tagline into the second, then opens Canva. When Canva sends the person back, Mantis saves a PNG on the post graphic and the open post updates to that finished design. Approve the draft; a manager sets the time and schedules it. **Drafts** lists posts that have not been sent for approval, with the graphic and the copy. Edit opens the post. Download saves a zip. Delete asks first, then removes the draft. Opening it leaves a folder named after that post, with the graphic as a PNG and the copy as a text file. When a post has a different graphic or different words per network, each of those is in the same folder. The Graphics tab lists saved graphics. Select several to delete them, move them into a folder, or tag them with products. Deleting a folder leaves the graphics under Unfiled. A graphic on a scheduled or posted item is left in place. **New from Canva** creates a standalone design the same way (tagline, sub-tagline, photo, template, or a blank design). **Edit in Canva** opens an existing Canva graphic again. A manager connects the Canva account under Settings → Social accounts. `CANVA_CLIENT_ID` and `CANVA_CLIENT_SECRET` go in `.env`. In the Canva developer portal, the redirect URL is `{PUBLIC_API_URL}/canva/callback` and the return URL is `{PUBLIC_API_URL}/canva/return`. Brand templates and autofill need a Canva plan that includes them. Templates need two text data fields and an image data field for the full social-post fill.
   - **Campaigns** plans a set of posts across a date range and builds the graphics.
   - **Approvals** is the manager queue.
   - **Library** has two tabs. **Shared drive** shows thumbnails of files imported from the Marketing & Media drive. **Canva** browses folders and uploaded images from the connected Canva account (Settings → Social accounts). Open a folder, load more when the list continues, and select an image for its preview, tags, and size. Canva's API does not return videos in folder listings yet. Thumbnails from Canva expire after about 15 minutes; refresh if one goes blank. The Canva app needs the `folder:read` scope. If the account was connected before that scope was added, a manager reconnects Canva after enabling folder read in the Canva developer portal.
@@ -151,7 +153,7 @@ A manager can return a post to the creator with a note. A failed publish can be 
 
 **Shared drive.** An admin sets the library location once: the top-level folder of the Marketing & Media network drive. Other PCs resolve that same share. If the drive is not mapped, Mantis says the drive was not found and to contact an admin.
 
-Anyone signed in can **Import folders** or **Import files**. Mantis indexes only those paths. The rest of the drive stays out of the library. A scan can take a while when it builds thumbnails; files show up in the grid as each batch finishes, not only when the scan ends. The bar under the Studio menu shows how many files were found and how many are indexed. Pause holds the scan. Cancel stops it. Files already indexed stay, and files the scan has not reached are left as they were.
+Anyone signed in can **Import folders** or **Import files**. Mantis indexes only those paths. The rest of the drive stays out of the library. A scan can take a while when it builds thumbnails; files show up in the grid as each batch finishes, not only when the scan ends. Photos get a thumbnail. Design files (PSD, AI, TIFF) and videos are indexed without one, because Windows builds those previews on the same process that handles typing and a single file can freeze the window for half a minute. Typing also makes the scan wait until you pause. The bar under the Studio menu shows how many files were found and how many are indexed. Pause holds the scan. Cancel stops it. Files already indexed stay, and files the scan has not reached are left as they were.
 
 Search, filters, import, and the selection toolbar sit directly under the Studio menu and stay there while the thumbnails scroll. Select thumbnails to add tags, assign a product, or move files into a folder. Moving creates the folder on the shared drive and moves the real files. **Remove** drops a file from the Mantis index and leaves it on the drive. The same remove action is on the file details panel.
 
@@ -167,7 +169,7 @@ Create New Company walks through the company name, a short description, a summar
 
 ### AI
 
-`AI_TEXT_PROVIDER`, `AI_EMBED_PROVIDER`, `AI_IMAGE_PROVIDER`, and `AI_VISION_PROVIDER` in `.env` choose the model. `mock` needs no key and is what local development uses. `openai` and `anthropic` need their API keys. `local` calls an OpenAI-compatible server, usually Ollama:
+`AI_TEXT_PROVIDER`, `AI_EMBED_PROVIDER`, `AI_IMAGE_PROVIDER`, and `AI_VISION_PROVIDER` in `.env` choose the model. `mock` needs no key and is what local development uses. `openai` and `anthropic` need their API keys. `local` calls an OpenAI-compatible server, usually Ollama. The chat panel uses `AI_TEXT_PROVIDER` and needs a model that supports tool calling. Set `OPENAI_ASSISTANT_MODEL` or `ANTHROPIC_ASSISTANT_MODEL` to use a different model for the chat than for drafting. Each one falls back to its text model when left empty. For a local model:
 
 ```
 AI_TEXT_PROVIDER=local
@@ -187,6 +189,7 @@ A knowledge pack is a folder (or a zip of that folder) described in `knowledge-p
 | Data | Location |
 |---|---|
 | Database files (PGlite) | `packages/db/.pglite` |
+| Dev database snapshots | `packages/db/.pglite-backups` |
 | Uploaded files, when `STORAGE_DRIVER=local` | `.data/storage` |
 | Desktop sign-in and server address | `%APPDATA%\Mantis\settings.json` |
 
@@ -200,6 +203,7 @@ Do not commit `.env`, `packages/db/.pglite`, or `.data`.
 | `pnpm dev:server` | API with reload |
 | `pnpm dev:desktop` | Electron app |
 | `pnpm db:deploy` | Apply migrations |
+| `pnpm db:restore` | Load the newest dev database snapshot into a new folder |
 | `pnpm db:generate` | Regenerate the Prisma client after a schema change |
 | `pnpm typecheck` | Typecheck every package |
 | `pnpm test` | Unit tests |
@@ -213,7 +217,7 @@ Do not commit `.env`, `packages/db/.pglite`, or `.data`.
 
 ## When something looks stuck
 
-**Can't reach the database at 127.0.0.1:5432.** The PGlite process is not running, or a second copy was started against the same data folder. Stop **Mantis (all)** and start it once. If the database log says it cannot find a valid checkpoint, the data directory was shut down uncleanly and needs a recovery before it will listen again.
+**Can't reach the database at 127.0.0.1:5432.** The PGlite process is not running, or a second copy was started against the same data folder. Stop **Mantis (all)** and start it once. If the database log says it cannot find a valid checkpoint, the folder was shut down uncleanly and will not open again. Stop the database and run `pnpm db:restore` to load the newest snapshot.
 
 **Every welcome button is gray.** The desktop cannot reach the API. Connection settings must be `http://localhost:4000`, and the API terminal must show that it is listening. Port 5173 will not work.
 

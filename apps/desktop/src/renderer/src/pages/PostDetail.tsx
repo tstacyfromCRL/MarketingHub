@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ExternalLink, ImageIcon, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { POST_STATUS_LABELS, PLATFORM_PRESETS, type Platform, type PostAction } from '@mh/shared';
 import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
+import { useAssistantStore } from '../lib/assistantStore';
 import { formatWhen, fromLocalInput, toLocalInput } from '../lib/format';
 import type { PostDetail, Variant } from '../lib/types';
 import { Badge, Button, Card, ErrorText, Field, Modal, Spinner, STATUS_COLORS } from '../components/ui';
@@ -29,6 +30,7 @@ export function PostDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const openWithAssistant = useAssistantStore((s) => s.openWith);
   const { data: post, isLoading } = useQuery({ queryKey: ['post', id], queryFn: () => api.get<PostDetail>(`/posts/${id}`) });
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -116,6 +118,12 @@ export function PostDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Opens the chat on this post. Mantis reads the post from the screen, so the person only adds their notes. */}
+          {post.editable && (
+            <Button variant="secondary" onClick={() => openWithAssistant('Rewrite this post. My notes: ')} title="Give Mantis notes and it rewrites the copy">
+              <Sparkles className="h-3.5 w-3.5" /> Rewrite with notes
+            </Button>
+          )}
           {post.actions.filter((a) => ACTION_LABELS[a]).map((a) => (
             <Button key={a} variant={ACTION_VARIANT[a] ?? 'primary'} onClick={() => runAction(a)} loading={transition.isPending && transition.variables?.action === a}>{ACTION_LABELS[a]}</Button>
           ))}

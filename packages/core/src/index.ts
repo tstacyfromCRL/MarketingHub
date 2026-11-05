@@ -26,6 +26,7 @@ export * from './marketLinks';
 export * from './assets';
 export * from './generation';
 export * from './designs';
+export * from './draftPack';
 export * from './designLibrary';
 export * from './posts';
 export * from './social';
@@ -33,6 +34,20 @@ export * from './canvaConnect';
 export * from './canva';
 export * from './publish';
 export * from './prompt';
+export * from './tasks';
+export * from './ai/chat';
+export * from './assistantLoop';
+export * from './assistantTools';
+export {
+  assistantStatus,
+  buildAssistantSystem,
+  deleteAssistantThread,
+  describePage,
+  getAssistantThread,
+  listAssistantThreads,
+  runAssistantTurn,
+  type AssistantMessageView,
+} from './assistant';
 export * from './campaigns';
 export * from './onboarding';
 export * from './jobs';

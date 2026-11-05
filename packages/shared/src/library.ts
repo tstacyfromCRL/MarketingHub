@@ -70,6 +70,21 @@ export function assetKindForPath(p: string): AssetKind {
   return EXT_KIND[ext] ?? 'OTHER';
 }
 
+/**
+ * Windows builds these previews on the Electron main process, which is also what delivers
+ * keystrokes. A single PSD or video can block that process for half a minute, so typing in any
+ * field waits. Those files are still indexed; they just have no thumbnail.
+ */
+const SHELL_THUMBNAIL_BLOCKS_UI = new Set([
+  'psd', 'psb', 'ai', 'eps', 'afdesign', 'afphoto', 'tif', 'tiff', 'heic',
+  'mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv',
+]);
+
+export function shellThumbnailBlocksUi(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  return SHELL_THUMBNAIL_BLOCKS_UI.has(ext);
+}
+
 export const LIBRARY_IMPORT_KINDS = ['FOLDER', 'FILE'] as const;
 export type LibraryImportKind = (typeof LIBRARY_IMPORT_KINDS)[number];
 

@@ -9,6 +9,10 @@ describe('feature help', () => {
     expect(helpForPath('/designs/new').title).toBe('Design editor');
     expect(helpForPath('/products/sku-1').title).toBe('Products');
     expect(helpForPath('/campaigns/new').title).toBe('Campaigns');
+    expect(helpForPath('/studio').how).toMatch(/Drafts/);
+    expect(helpForPath('/studio').how).toMatch(/PNG/);
+    expect(helpForPath('/studio').how).toMatch(/Edit opens the post/);
+    expect(helpForPath('/studio').how).toMatch(/Delete asks/);
   });
 
   it('picks the knowledge tab you are on, not a generic knowledge page', () => {

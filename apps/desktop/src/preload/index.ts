@@ -47,6 +47,8 @@ const api = {
       };
     },
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
+    /** Tells a running library scan to wait, so a thumbnail does not freeze the key the person just pressed. */
+    noteActivity: (): void => ipcRenderer.send('app:activity'),
   },
 };
 
