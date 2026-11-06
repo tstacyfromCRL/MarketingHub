@@ -10,6 +10,7 @@ import type { KnowledgeSource } from '../lib/types';
 import { Badge, Button, Card, ChipInput, Empty, ErrorText, Field, Modal, PageHeader, Spinner } from '../components/ui';
 import { BrandFileUploader } from '../components/BrandKit';
 import { ClaimsTab, ConfidentialTab, DocumentsTab, IntegrationsTab, KnowledgeProductsTab, PackTab, PlaybooksTab } from './KnowledgeSystem';
+import { ArticlesTab } from './ArticleSearch';
 
 const TABS = [
   { to: 'profile', label: 'Brand' },
@@ -19,6 +20,7 @@ const TABS = [
   { to: 'catalog', label: 'Products' },
   { to: 'integrations', label: 'Integrations' },
   { to: 'documents', label: 'Documents' },
+  { to: 'articles', label: 'Articles' },
   { to: 'sources', label: 'Links & examples' },
   { to: 'accomplishments', label: 'Accomplishments' },
   { to: 'pack', label: 'Import / Export' },
@@ -43,6 +45,7 @@ export function KnowledgePage() {
         <Route path="products" element={<Navigate to="/products" replace />} />
         <Route path="products/:id" element={<ProductRedirect />} />
         <Route path="accomplishments" element={<AccomplishmentsTab />} />
+        <Route path="articles" element={<ArticlesTab />} />
         <Route path="sources" element={<SourcesTab />} />
         <Route path="playbooks" element={<PlaybooksTab />} />
         <Route path="claims" element={<ClaimsTab />} />

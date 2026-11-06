@@ -32,13 +32,16 @@ export function Button({
   );
 }
 
-export function Field({ label, children, hint, className = '' }: { label: string; children: ReactNode; hint?: string; className?: string }) {
+export function Field({ label, children, hint, action, className = '' }: { label: string; children: ReactNode; hint?: string; action?: ReactNode; className?: string }) {
   return (
-    <label className={`block ${className}`}>
-      <span className="label">{label}</span>
+    <div className={`block ${className}`}>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="label mb-0">{label}</span>
+        {action}
+      </div>
       {children}
       {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
-    </label>
+    </div>
   );
 }
 

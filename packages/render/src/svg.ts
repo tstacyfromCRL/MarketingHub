@@ -1,4 +1,4 @@
-import type { DesignDoc, Layer } from '@mh/shared';
+import { pathSvgData, type DesignDoc, type Layer } from '@mh/shared';
 import { escapeXml, sniffMime, visibleLayers, wrapText, type ImageResolver } from './common';
 
 const FIT: Record<string, string> = { cover: 'xMidYMid slice', contain: 'xMidYMid meet', fill: 'none' };
@@ -6,7 +6,7 @@ const FIT: Record<string, string> = { cover: 'xMidYMid slice', contain: 'xMidYMi
 async function layerSvg(layer: Layer, resolve: ImageResolver): Promise<string> {
   const cx = layer.x + layer.width / 2;
   const cy = layer.y + layer.height / 2;
-  const transform = layer.rotation ? ` transform="rotate(${layer.rotation} ${cx} ${cy})"` : '';
+  let transform = layer.rotation ? ` transform="rotate(${layer.rotation} ${cx} ${cy})"` : '';
   const opacity = layer.opacity < 1 ? ` opacity="${layer.opacity}"` : '';
   let inner = '';
   switch (layer.type) {
@@ -34,7 +34,17 @@ async function layerSvg(layer: Layer, resolve: ImageResolver): Promise<string> {
       const tspans = lines
         .map((line, i) => `<tspan x="${x}" y="${layer.y + layer.fontSize + i * lh}">${escapeXml(line) || ' '}</tspan>`)
         .join('');
-      inner = `<text font-family="${escapeXml(layer.fontFamily)}" font-size="${layer.fontSize}" font-weight="${layer.fontWeight}"${layer.italic ? ' font-style="italic"' : ''} fill="${layer.color}" text-anchor="${anchor}" xml:space="preserve">${tspans}</text>`;
+      const tracking = layer.letterSpacing ? ` letter-spacing="${layer.letterSpacing}"` : '';
+      const underline = layer.underline ? ' text-decoration="underline"' : '';
+      inner = `<text font-family="${escapeXml(layer.fontFamily)}" font-size="${layer.fontSize}" font-weight="${layer.fontWeight}"${layer.italic ? ' font-style="italic"' : ''}${tracking}${underline} fill="${layer.color}" text-anchor="${anchor}" xml:space="preserve">${tspans}</text>`;
+      break;
+    }
+    case 'path': {
+      // Local points, then the same top-left rotation the editor uses.
+      const fill = layer.fill === 'none' ? 'none' : layer.fill;
+      const stroke = layer.stroke && layer.strokeWidth ? ` stroke="${layer.stroke}" stroke-width="${layer.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"` : '';
+      inner = `<path d="${pathSvgData(layer.points, layer.closed)}" fill="${fill}"${stroke}/>`;
+      transform = ` transform="translate(${layer.x} ${layer.y})${layer.rotation ? ` rotate(${layer.rotation})` : ''}"`;
       break;
     }
   }

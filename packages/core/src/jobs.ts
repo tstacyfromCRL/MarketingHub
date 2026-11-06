@@ -6,6 +6,7 @@ import { watchKnowledgeDir } from './watchKnowledge';
 import { sendEmail, sendSlack } from './notify';
 import { duePostIds, publishPost } from './publish';
 import { enqueue, type JobHandlers, type JobName } from './queue';
+import { runArticleSearch, sweepArticleSearches } from './articleSearchRun';
 import { dueRecrawlSourceIds, scrapeProductLinks, scrapeSource } from './scrape';
 import { analyzeBrand } from './onboarding';
 
@@ -31,6 +32,14 @@ export const jobHandlers: JobHandlers = {
   'generate-campaign': ({ campaignId }) => generateCampaign(campaignId),
   'analyze-brand': () => analyzeBrand(),
   'scrape-product-links': ({ productId }) => scrapeProductLinks(productId),
+  'sweep-article-searches': ({ orgId }) => sweepArticleSearches(orgId),
+  'run-article-search': async ({ searchId }) => {
+    try {
+      await runArticleSearch(searchId);
+    } catch {
+      // The search row keeps the message. One failed lookup must not stop the hourly sweep.
+    }
+  },
   'send-email': (data) => sendEmail(data),
   'send-slack': (data) => sendSlack(data),
 };
@@ -40,4 +49,5 @@ export const REPEATING_JOBS: { name: JobName; everyMs: number }[] = [
   { name: 'recrawl-sources', everyMs: 60 * 60_000 },
   { name: 'sync-products', everyMs: 24 * 60 * 60_000 },
   { name: 'watch-knowledge', everyMs: 10 * 60_000 },
+  { name: 'sweep-article-searches', everyMs: 60 * 60_000 },
 ];

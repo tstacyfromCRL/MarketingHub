@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateSocialDraftSchema } from '@mh/shared';
+import { generateSocialDraftSchema, rewriteSocialFieldSchema, suggestHashtagsSchema } from '@mh/shared';
 
 describe('social draft request', () => {
   it('accepts a brief and optional products for the studio flow', () => {
@@ -12,5 +12,20 @@ describe('social draft request', () => {
       platform: 'linkedin',
       productIds: ['prod-1'],
     })).toMatchObject({ platform: 'linkedin', productIds: ['prod-1'] });
+  });
+
+  it('asks to rewrite one field and to suggest hashtags from the current draft', () => {
+    expect(rewriteSocialFieldSchema.parse({ field: 'tagline', brief: 'Spring Expo booth' })).toMatchObject({
+      field: 'tagline',
+      brief: 'Spring Expo booth',
+      title: '',
+      body: '',
+      productIds: [],
+    });
+    expect(suggestHashtagsSchema.parse({
+      brief: 'Spring Expo booth',
+      body: 'Stop by the booth.',
+      platform: 'instagram',
+    })).toMatchObject({ body: 'Stop by the booth.', platform: 'instagram' });
   });
 });

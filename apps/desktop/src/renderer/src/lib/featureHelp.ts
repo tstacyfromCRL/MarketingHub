@@ -17,7 +17,7 @@ interface Topic {
 const home: FeatureHelp = {
   title: 'Home',
   purpose: 'Home is your starting point after you sign in. It shows what is waiting on you.',
-  how: 'Look at posts that need you, your tasks, and what is coming up. Open any item to work on it. The chat at the bottom of the screen is a conversation with Mantis: ask a question, start a draft or a task, or have a post rewritten from your notes. Click the box to open the conversation. Mantis asks when it needs a detail, and it never approves, publishes, or deletes. A banner here also brings you back to company setup if that is unfinished.',
+  how: 'Look at posts that need you, your tasks, and what is coming up. Open any item to work on it. The sections sit in equal cells, 3 columns by 2 rows. Customize lets you add, remove, or drag them, and add or remove columns and rows. It also offers My drafts, Notifications, Campaigns, Recent articles, and Team events. Reset layout puts the original sections and the 3 by 2 grid back. The Mantis button in the bottom right opens a chat drawer: ask a question, start a draft or a task, or have a post rewritten from your notes. Mantis asks when it needs a detail, and it never approves, publishes, or deletes. A banner here also brings you back to company setup if that is unfinished.',
   why: 'You can see the work that needs a person before you go looking through the other screens.',
 };
 
@@ -38,28 +38,28 @@ const tasks: FeatureHelp = {
 const studio: FeatureHelp = {
   title: 'Content',
   purpose: 'Content is where you draft one post, email, blog, or documentation page.',
-  how: 'On Social post, describe the idea, then Write with AI for a tagline, sub-tagline, and post copy you can edit. Choose a library photo and a Canva brand template. Create draft & edit in Canva fills the photo plus the first two text fields and opens Canva to refine. Click Return in Canva and the post preview updates to that finished graphic. Drafts lists those posts and their graphics until someone sends them for approval. Edit opens the post. Download saves a zip that opens as a folder named after the post, with the graphic as a PNG and the copy as a text file. Delete asks before it removes the draft. Approve the draft; a manager schedules it. On Graphics, New from Canva works the same for standalone designs. Emails, blogs, and docs still start from a brief on their own tab.',
+  how: 'On Social post, describe the idea, then Write with AI for a tagline, sub-tagline, and post copy you can edit. Re-Write on the brief, title, tagline, sub-tagline, or post copy asks for new text for that field only. Select a passage and choose Rephrase selection to rewrite just that passage. Thumbs up or thumbs down, with an optional note about why, is saved and used the next time Mantis writes. Suggested hashtags sit under the copy, and clicking one adds it. Add a saved article inserts that article’s title and link into the copy. Choose a library photo and a Canva brand template. Save as Draft stores the copy and the platforms without opening Canva. Create draft & edit in Canva fills the photo plus the first two text fields and opens Canva to refine. Click Return in Canva and the post preview updates to that finished graphic. Drafts lists those posts and their graphics until someone sends them for approval. Edit opens the post. Download saves a zip that opens as a folder named after the post, with the graphic as a PNG and the copy as a text file. Delete asks before it removes the draft. Approve the draft; a manager schedules it. On Graphics, New from Canva works the same for standalone designs. Emails, blogs, and docs still start from a brief on their own tab.',
   why: 'The draft starts from your brand and knowledge base, and the graphic is finished in Canva before it is scheduled.',
 };
 
 const post: FeatureHelp = {
   title: 'Post',
   purpose: 'This is one post, from the first draft through publishing.',
-  how: 'Edit the words and check the warnings. Rewrite with notes opens the chat on this post so you can say what to change. Attach or open the graphic. Move the post through approval. A manager can send it back with a note. After approval it can be scheduled. Nothing posts until a manager has approved it.',
+  how: 'Edit the words and check the warnings. Select a passage and choose Rephrase selection to rewrite just that passage. Thumbs up or thumbs down, with an optional note about why, is saved and used the next time Mantis writes. Add a saved article inserts that article’s title and link into the base copy or a platform version. Rewrite with notes opens the chat on this post so you can say what to change. Attach or open the graphic. Move the post through approval. A manager can send it back with a note. After approval it can be scheduled. Nothing posts until a manager has approved it.',
   why: 'This is the record of what will actually go out, and who still needs to say yes.',
 };
 
 const contentDoc: FeatureHelp = {
   title: 'Long-form draft',
   purpose: 'This is a longer piece, such as an email, a blog, or a documentation page.',
-  how: 'Edit the title and the body, then save. You can ask for a revision from here and copy or download the text.',
+  how: 'Edit the title and the body, then save. Select a passage and choose Rephrase selection to rewrite just that passage. Thumbs up or thumbs down, with an optional note about why, is saved and used the next time Mantis writes. You can ask for a revision from here and copy or download the text.',
   why: 'Longer writing stays with the same company knowledge as a social post, and you can keep revising it.',
 };
 
 const design: FeatureHelp = {
   title: 'Design editor',
   purpose: 'The design editor is where you build the picture that goes with a post.',
-  how: 'Set the canvas size. Add text, shapes, or a logo. Place a photo from the library, or open a file with Use in New Design. Save the graphic onto the post, or export it.',
+  how: 'Set the canvas size. Add text, shapes, or a logo. Place a photo from the library, or open a file with Use in New Design. Pen draws a path: click for corners, drag for curves, click the first point to close, and Enter finishes. Nodes then edits that path: drag a point, or drag a tangent handle. The opposite handle stays on the same line and keeps its length, so each side of the curve can differ. Alt breaks the tangent. A dashed handle is a straight corner until you pull it. Click a segment to add a point, and double-click a point to make it a corner. Shift-click selects more than one object. Align lines them up with the page, or with each other when several are selected. Distribute gives them equal gaps. Duplicate, bring to front, and send to back sit on that row. Arrow keys nudge. Guides snap objects and are not exported. Tracking and underline are on a text layer. Ctrl+scroll zooms. Save the graphic onto the post, or export it.',
   why: 'The picture uses the brand colors and fonts, and it stays attached to the words.',
 };
 
@@ -152,6 +152,13 @@ const documents: FeatureHelp = {
   purpose: 'Documents are reference files for the whole company, not for one product.',
   how: 'Upload a Markdown, text, PDF, or Word file. Choose whether it is public, internal, or restricted.',
   why: 'The AI can read manuals and notes you already have. Restricted files are never used in a draft. Internal files are left out when a cloud model is writing.',
+};
+
+const articles: FeatureHelp = {
+  title: 'Articles',
+  purpose: 'Articles are pages found from keywords you choose, then filed as knowledge.',
+  how: 'Add the keywords and choose manual, once a day, once a week, or once a month. Press Search for a manual run. Save an article under the company, a product, or a project. That reads the page into the knowledge base. In the post editor, Add a saved article puts the link into the copy.',
+  why: 'The writer can use reporting and research you picked, and a post can point at the article itself.',
 };
 
 const sources: FeatureHelp = {
@@ -267,6 +274,7 @@ const TOPICS: Topic[] = [
   { test: (path) => path === '/knowledge/catalog' || path.startsWith('/knowledge/catalog/'), help: catalog },
   { test: (path) => path === '/knowledge/integrations' || path.startsWith('/knowledge/integrations/'), help: integrations },
   { test: (path) => path === '/knowledge/documents' || path.startsWith('/knowledge/documents/'), help: documents },
+  { test: (path) => path === '/knowledge/articles' || path.startsWith('/knowledge/articles/'), help: articles },
   { test: (path) => path === '/knowledge/sources' || path.startsWith('/knowledge/sources/'), help: sources },
   { test: (path) => path === '/knowledge/accomplishments' || path.startsWith('/knowledge/accomplishments/'), help: accomplishments },
   { test: (path) => path === '/knowledge/pack' || path.startsWith('/knowledge/pack/'), help: pack },

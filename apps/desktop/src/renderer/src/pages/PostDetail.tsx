@@ -7,6 +7,8 @@ import { api, errorMessage, fileUrl, queryClient } from '../lib/api';
 import { useAssistantStore } from '../lib/assistantStore';
 import { formatWhen, fromLocalInput, toLocalInput } from '../lib/format';
 import type { PostDetail, Variant } from '../lib/types';
+import { ArticleLinkSelect } from '../components/ArticleLinkSelect';
+import { VoiceField } from '../components/VoiceField';
 import { Badge, Button, Card, ErrorText, Field, Modal, Spinner, STATUS_COLORS } from '../components/ui';
 import { PlatformPicker } from './Studio';
 import { WorkLogLine } from './WorkLog';
@@ -158,8 +160,9 @@ export function PostDetailPage() {
           <Card title="Post" actions={editable && <Button size="sm" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>{post.status === 'IN_REVIEW' ? 'Save manager edits' : 'Save'}</Button>}>
             {!editable && <p className="mb-3 text-xs text-slate-500">{post.status === 'IN_REVIEW' ? 'A manager is reviewing this post.' : post.status === 'CREATOR_APPROVED' ? 'Waiting for a manager to start the review.' : 'Unschedule the post to make changes.'}</p>}
             <div className="space-y-4">
-              <Field label="Title"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} disabled={!editable} /></Field>
-              <Field label="Base copy"><textarea className="input" rows={4} value={body} onChange={(e) => setBody(e.target.value)} disabled={!editable} /></Field>
+              <VoiceField label="Title" field="social.title" contentType="SOCIAL_POST" value={title} onChange={setTitle} disabled={!editable} />
+              <VoiceField label="Base copy" field="social.body" contentType="SOCIAL_POST" multiline rows={4} value={body} onChange={setBody} disabled={!editable} />
+              {editable && <ArticleLinkSelect body={body} onChange={setBody} />}
               <WarningLines warnings={post.aiWarnings} />
               {editable && <Field label="Platforms"><PlatformPicker value={platforms} onChange={setPlatforms} /></Field>}
               <Field label="Publish time"><input type="datetime-local" className="input w-64" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} disabled={!editable} /></Field>
@@ -219,7 +222,8 @@ function VariantEditor({ variant, value, onChange, editable }: { variant: Varian
         <span className="flex-1" />
         <span className={`text-xs ${over ? 'text-rose-400' : 'text-slate-500'}`}>{value.length.toLocaleString()} / {preset.maxChars.toLocaleString()}</span>
       </div>
-      <textarea className={`input text-sm ${over ? 'border-rose-700' : ''}`} rows={Math.min(8, Math.max(3, Math.ceil(value.length / 90)))} value={value} onChange={(e) => onChange(e.target.value)} disabled={!editable} />
+      <VoiceField label="Copy" field={`social.${variant.platform}`} contentType="SOCIAL_POST" multiline rows={Math.min(8, Math.max(3, Math.ceil(value.length / 90)))} value={value} onChange={onChange} disabled={!editable} />
+      {editable && <div className="mt-2"><ArticleLinkSelect body={value} onChange={onChange} /></div>}
       <WarningLines warnings={variant.aiWarnings} />
       {variant.error && <p className="mt-1 text-xs text-rose-400">{variant.error}</p>}
       {variant.externalUrl && (

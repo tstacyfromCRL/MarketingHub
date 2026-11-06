@@ -43,6 +43,29 @@ export const imageLayerSchema = z.object({
   role: z.enum(['background', 'generated', 'product', 'logo', 'other']).default('other'),
 });
 
+export const pathPointSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  /** Handle arriving at this anchor, relative to the anchor. Absent means that side is a corner. */
+  inX: z.number().optional(),
+  inY: z.number().optional(),
+  outX: z.number().optional(),
+  outY: z.number().optional(),
+});
+export type PathPoint = z.infer<typeof pathPointSchema>;
+
+export const pathLayerSchema = z.object({
+  ...base,
+  type: z.literal('path'),
+  /** Anchors in the layer box. Page position is x + point.x. */
+  points: z.array(pathPointSchema).min(2),
+  closed: z.boolean().default(false),
+  /** "none" draws no fill, so an open pen stroke stays hollow. */
+  fill: z.string().default('none'),
+  stroke: z.string().default('#111827'),
+  strokeWidth: z.number().default(2),
+});
+
 export const textLayerSchema = z.object({
   ...base,
   type: z.literal('text'),
@@ -54,6 +77,9 @@ export const textLayerSchema = z.object({
   color: z.string(),
   align: z.enum(['left', 'center', 'right']).default('left'),
   lineHeight: z.number().default(1.2),
+  /** Extra space between characters, in pixels. Illustrator calls this tracking. */
+  letterSpacing: z.number().optional(),
+  underline: z.boolean().optional(),
 });
 
 export const layerSchema = z.discriminatedUnion('type', [
@@ -61,12 +87,22 @@ export const layerSchema = z.discriminatedUnion('type', [
   ellipseLayerSchema,
   imageLayerSchema,
   textLayerSchema,
+  pathLayerSchema,
 ]);
 export type Layer = z.infer<typeof layerSchema>;
 export type TextLayer = z.infer<typeof textLayerSchema>;
 export type ImageLayer = z.infer<typeof imageLayerSchema>;
 export type RectLayer = z.infer<typeof rectLayerSchema>;
 export type EllipseLayer = z.infer<typeof ellipseLayerSchema>;
+export type PathLayer = z.infer<typeof pathLayerSchema>;
+
+/** A layout guide. x is a vertical line, y is a horizontal line. Guides are not printed. */
+export const guideSchema = z.object({
+  id: z.string(),
+  axis: z.enum(['x', 'y']),
+  position: z.number(),
+});
+export type Guide = z.infer<typeof guideSchema>;
 
 export const designDocSchema = z.object({
   version: z.literal(1),
@@ -75,6 +111,8 @@ export const designDocSchema = z.object({
   background: z.string().default('#ffffff'),
   /** Bottom-most layer first. */
   layers: z.array(layerSchema),
+  /** Page guides. Omitted documents simply have none. */
+  guides: z.array(guideSchema).optional(),
 });
 export type DesignDoc = z.infer<typeof designDocSchema>;
 

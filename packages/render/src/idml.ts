@@ -73,6 +73,10 @@ export async function toIdml(doc: DesignDoc, resolve: ImageResolver): Promise<Bu
           `<TextFramePreference TextColumnCount="1" VerticalJustification="TopAlign" FirstBaselineOffset="AscentOffset"/></TextFrame>`,
       );
       stories.push({ id: sid, xml: storyXml(sid, layer, colorRef(layer.color)) });
+    } else if (layer.type === 'path') {
+      const fill = layer.fill === 'none' ? 'Swatch/None' : colorRef(layer.fill);
+      const stroke = layer.stroke && layer.strokeWidth ? `StrokeColor="${colorRef(layer.stroke)}" StrokeWeight="${layer.strokeWidth}"` : 'StrokeWeight="0"';
+      items.push(`<Polygon Self="it_${n}" ${common} ContentType="Unassigned" FillColor="${fill}" ${stroke}>${pathGeometry(layer, H)}${opacity}</Polygon>`);
     }
   }
 
@@ -134,6 +138,15 @@ export async function toIdml(doc: DesignDoc, resolve: ImageResolver): Promise<Bu
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', mimeType: 'application/vnd.adobe.indesign-idml-package' });
 }
 
+function pathGeometry(layer: Extract<Layer, { type: 'path' }>, pageHeight: number): string {
+  const pts = layer.points.map((point) => {
+    const ax = layer.x + point.x;
+    const ay = layer.y + point.y - pageHeight / 2;
+    return `<PathPointType Anchor="${ax} ${ay}" LeftDirection="${ax + (point.inX ?? 0)} ${ay + (point.inY ?? 0)}" RightDirection="${ax + (point.outX ?? 0)} ${ay + (point.outY ?? 0)}"/>`;
+  }).join('');
+  return `<Properties><PathGeometry><GeometryPathType PathOpen="${layer.closed ? 'false' : 'true'}"><PathPointArray>${pts}</PathPointArray></GeometryPathType></PathGeometry></Properties>`;
+}
+
 function storyXml(id: string, layer: TextLayer, color: string): string {
   const just = layer.align === 'center' ? 'CenterAlign' : layer.align === 'right' ? 'RightAlign' : 'LeftAlign';
   const style = [layer.fontWeight === 'bold' ? 'Bold' : '', layer.italic ? 'Italic' : ''].join(' ').trim() || 'Regular';
@@ -142,7 +155,7 @@ function storyXml(id: string, layer: TextLayer, color: string): string {
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><idPkg:Story xmlns:idPkg="${NS}" ${DOM}>` +
     `<Story Self="${id}" AppliedTOCStyle="n" TrackChanges="false" StoryTitle="${escapeXml(layer.name)}">` +
     `<ParagraphStyleRange AppliedParagraphStyle="ParagraphStyle/$ID/NormalParagraphStyle" Justification="${just}">` +
-    `<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]" PointSize="${layer.fontSize}" FillColor="${color}" FontStyle="${style}">` +
+    `<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]" PointSize="${layer.fontSize}" FillColor="${color}" FontStyle="${style}"${layer.letterSpacing ? ` Tracking="${Math.round((layer.letterSpacing / layer.fontSize) * 1000)}"` : ''}${layer.underline ? ' Underline="true"' : ''}>` +
     `<Properties><AppliedFont type="string">${escapeXml(layer.fontFamily)}</AppliedFont><Leading type="unit">${layer.fontSize * layer.lineHeight}</Leading></Properties>` +
     paras +
     `</CharacterStyleRange></ParagraphStyleRange></Story></idPkg:Story>`

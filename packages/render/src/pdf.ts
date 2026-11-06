@@ -10,7 +10,7 @@ import {
   type PDFRef,
   type PDFFont,
 } from 'pdf-lib';
-import type { DesignDoc, Layer } from '@mh/shared';
+import { bakeRotation, framePath, pathPdfData, type DesignDoc, type Layer } from '@mh/shared';
 import { hexToRgb, wrapText, type ImageResolver } from './common';
 import { rasterizeLayerPng } from './raster';
 
@@ -76,12 +76,41 @@ export async function toPdf(doc: DesignDoc, resolve: ImageResolver): Promise<Buf
       wrapText(layer).forEach((raw, i) => {
         // Standard PDF fonts only cover WinAnsi; drop anything else (e.g. emoji) rather than failing.
         const line = [...raw].filter((ch) => charset.has(ch.codePointAt(0)!)).join('');
-        const w = font.widthOfTextAtSize(line, layer.fontSize);
+        const tracking = layer.letterSpacing ?? 0;
+        const w = font.widthOfTextAtSize(line, layer.fontSize) + tracking * Math.max(0, [...line].length - 1);
         const x = layer.align === 'center' ? layer.x + (layer.width - w) / 2 : layer.align === 'right' ? layer.x + layer.width - w : layer.x;
-        page.drawText(line, {
-          x, y: doc.height - (layer.y + layer.fontSize + i * lh), size: layer.fontSize, font,
-          color: rgb(c.r, c.g, c.b), opacity: layer.opacity,
-        });
+        const y = doc.height - (layer.y + layer.fontSize + i * lh);
+        if (!tracking) {
+          page.drawText(line, { x, y, size: layer.fontSize, font, color: rgb(c.r, c.g, c.b), opacity: layer.opacity });
+        } else {
+          let cursor = x;
+          for (const ch of line) {
+            page.drawText(ch, { x: cursor, y, size: layer.fontSize, font, color: rgb(c.r, c.g, c.b), opacity: layer.opacity });
+            cursor += font.widthOfTextAtSize(ch, layer.fontSize) + tracking;
+          }
+        }
+        if (layer.underline && line) {
+          page.drawLine({
+            start: { x, y: y - layer.fontSize * 0.15 },
+            end: { x: x + w, y: y - layer.fontSize * 0.15 },
+            thickness: Math.max(0.75, layer.fontSize / 16),
+            color: rgb(c.r, c.g, c.b),
+            opacity: layer.opacity,
+          });
+        }
+      });
+    } else if (layer.type === 'path') {
+      // A rotated path is rewritten flat so the PDF keeps the curve instead of a picture of it.
+      const drawn = layer.rotation ? { ...layer, ...framePath(bakeRotation(layer)) } : layer;
+      const stroke = drawn.stroke && drawn.strokeWidth ? hexToRgb(drawn.stroke) : null;
+      const fill = drawn.fill !== 'none' ? hexToRgb(drawn.fill) : null;
+      page.drawSvgPath(pathPdfData(drawn, doc.height), {
+        x: 0,
+        y: 0,
+        borderWidth: stroke ? drawn.strokeWidth : 0,
+        borderColor: stroke ? rgb(stroke.r, stroke.g, stroke.b) : undefined,
+        color: fill ? rgb(fill.r, fill.g, fill.b) : undefined,
+        opacity: layer.opacity,
       });
     } else {
       const png = await pdf.embedPng(await rasterizeLayerPng(doc, layer, resolve));

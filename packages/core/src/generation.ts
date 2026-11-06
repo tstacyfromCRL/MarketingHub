@@ -5,10 +5,15 @@ import {
   marketKnowledgeText,
   paletteInOrder,
   productKnowledgeText,
+  limitWords,
+  normalizeHashtags,
+  SOCIAL_FIELD_WORD_CAP,
+  voiceGuidance,
   type ContentType,
   type DesignDoc,
   type Layer,
   type Platform,
+  type SocialDraftField,
 } from '@mh/shared';
 import sharp from 'sharp';
 import { config } from './config';
@@ -80,7 +85,7 @@ export async function buildBrandContext(orgId: string, brief: string, productIds
       OR: [{ productId: null }, ...(productIds.length ? [{ productId: { in: productIds } }] : [])],
     },
   });
-  const [retrievedRaw, examples, linkedClaims, terms] = await Promise.all([
+  const [retrievedRaw, examples, linkedClaims, terms, voiceNotes] = await Promise.all([
     retrieve(orgId, [brief, ...products.map((p) => p.name)].join(' '), 10).catch(() => [] as RetrievedChunk[]),
     styleExamples(orgId, brief, platform),
     productIds.length
@@ -94,6 +99,7 @@ export async function buildBrandContext(orgId: string, brief: string, productIds
         })
       : Promise.resolve([]),
     prisma.confidentialTerm.findMany({ where: { organizationId: orgId } }),
+    prisma.voiceFeedback.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: 'desc' }, take: 16 }),
   ]);
   const { kept, droppedInternal } = chunksAllowedForProvider(retrievedRaw, config.AI_TEXT_PROVIDER);
   // Sample posts and claim chunks are not facts. Samples are tone. Claims get their own block.
@@ -116,6 +122,7 @@ export async function buildBrandContext(orgId: string, brief: string, productIds
     brand.voice && `Brand voice: ${brand.voice}`,
     brand.dos.length ? `Always: ${brand.dos.join('; ')}` : '',
     brand.donts.length ? `Never: ${brand.donts.join('; ')}` : '',
+    voiceGuidance(voiceNotes),
     banned.length ? `Never mention these names in any output: ${banned.join(', ')}.` : '',
     examples.texts.length
       ? `Style references: past posts written by the team. Match their tone, rhythm, length and emoji/hashtag habits. ` +
@@ -167,7 +174,27 @@ export interface SocialDraftParts {
   tagline: string;
   subTagline: string;
   body: string;
+  /** Suggestions only. The copy changes when a person adds one. */
+  hashtags: string[];
   warnings: OutputWarning[];
+}
+
+const FIELD_TASK: Record<SocialDraftField, string> = {
+  brief: 'Rewrite the brief as a clearer request of one or two sentences. Keep the same products, event, and ask. Do not write the social post.',
+  title: 'Write a different internal title. It is a label for the team, not the public caption. No hashtags.',
+  tagline: 'Write a different tagline for the graphic. No hashtags.',
+  subTagline: 'Write a different sub-tagline for under the graphic. No hashtags.',
+  body: 'Write a different version of the social post copy. Keep the facts. Do not reuse the previous sentences.',
+};
+
+function draftSnapshot(input: { brief: string; title: string; tagline: string; subTagline: string; body: string }): string {
+  return [
+    `Brief: ${input.brief}`,
+    `Title: ${input.title || '(none)'}`,
+    `Tagline: ${input.tagline || '(none)'}`,
+    `Sub-tagline: ${input.subTagline || '(none)'}`,
+    `Post copy: ${input.body || '(none)'}`,
+  ].join('\n');
 }
 
 /**
@@ -192,13 +219,13 @@ export async function generateSocialDraft(input: {
     prompt: [
       'Write one social media post as structured JSON for our studio.',
       playbook?.body,
-      playbook?.hashtagMin != null && `Put between ${playbook.hashtagMin} and ${playbook.hashtagMax ?? playbook.hashtagMin} hashtags at the end of body.`,
+      playbook?.hashtagMin != null && `Suggest between ${playbook.hashtagMin} and ${playbook.hashtagMax ?? playbook.hashtagMin} hashtags in the hashtags array. The body can include a tag only when it reads as part of the post.`,
       preset && `Primary platform: ${preset.label}.${limit ? ` Keep body under ${limit} characters.` : ''}`,
       knowledgeBlock(ctx.facts),
       claimBlock(ctx.claims),
       `Brief: ${input.brief}`,
-      'Respond as JSON with keys: title (internal label, short), tagline (max 8 words, on the graphic), subTagline (max 14 words, under the tagline on the graphic), body (the full post copy with hashtags).',
-      'Example shape: {"title":"...","tagline":"...","subTagline":"...","body":"..."}',
+      'Respond as JSON with keys: title (internal label, short), tagline (max 8 words, on the graphic), subTagline (max 14 words, under the tagline on the graphic), body (the full post copy), hashtags (6 tags that fit this post, each starting with #, not forced into the body).',
+      'Example shape: {"title":"...","tagline":"...","subTagline":"...","body":"...","hashtags":["#One","#Two"]}',
     ].filter(Boolean).join('\n\n'),
     mock: () => {
       const product = ctx.productNames[0] ?? ctx.companyName;
@@ -208,20 +235,145 @@ export async function generateSocialDraft(input: {
         tagline: `${product}`.slice(0, 48),
         subTagline: input.brief.split(/[.!?\n]/)[0].trim().slice(0, 80) || `See what ${product} can do`,
         body,
+        hashtags: [`#${ctx.companyName}`, `#${product}`],
       });
     },
   });
-  const parsed = parseJson<{ title?: string; tagline?: string; subTagline?: string; body?: string }>(text);
+  const parsed = parseJson<{ title?: string; tagline?: string; subTagline?: string; body?: string; hashtags?: string[] }>(text);
   const body = String(parsed.body ?? '').trim() || mockContent('SOCIAL_POST', input.brief, ctx, limit);
   const warnings = validateOutput(body, warningContext(ctx, playbook, limit));
   if (ctx.droppedInternal) warnings.push({ code: 'INTERNAL_OMITTED', message: 'Internal knowledge was left out because this draft used a cloud model.' });
   return {
-    title: String(parsed.title ?? (input.brief.slice(0, 60) || 'Social post')).trim(),
-    tagline: String(parsed.tagline ?? '').trim(),
-    subTagline: String(parsed.subTagline ?? '').trim(),
+    title: limitWords(String(parsed.title ?? (input.brief.slice(0, 60) || 'Social post')), SOCIAL_FIELD_WORD_CAP.title ?? 8),
+    tagline: limitWords(String(parsed.tagline ?? ''), SOCIAL_FIELD_WORD_CAP.tagline ?? 8),
+    subTagline: limitWords(String(parsed.subTagline ?? ''), SOCIAL_FIELD_WORD_CAP.subTagline ?? 14),
     body,
+    hashtags: suggestedHashtags(parsed.hashtags, ctx),
     warnings,
   };
+}
+
+function suggestedHashtags(raw: string[] | undefined, ctx: BrandContext): string[] {
+  const parsed = normalizeHashtags(raw ?? []);
+  if (parsed.length) return parsed;
+  return normalizeHashtags([ctx.companyName, ...ctx.productNames]);
+}
+
+/** New text for one social-post field. The other fields are context, not something to replace. */
+export async function rewriteSocialField(input: {
+  orgId?: string;
+  field: SocialDraftField;
+  brief: string;
+  platform?: Platform;
+  productIds?: string[];
+  title?: string;
+  tagline?: string;
+  subTagline?: string;
+  body?: string;
+}): Promise<{ text: string; warnings: OutputWarning[]; hashtags: string[] }> {
+  const orgId = input.orgId ?? (await getDefaultOrgId());
+  const ctx = await buildBrandContext(orgId, input.brief, input.productIds, input.platform);
+  const playbook = input.field === 'body' ? await selectPlaybook(orgId, input.platform, 'SOCIAL_POST') : null;
+  const preset = input.platform ? PLATFORM_PRESETS[input.platform] : null;
+  const limit = playbook?.maxChars ?? preset?.maxChars;
+  const current = { brief: input.brief, title: input.title ?? '', tagline: input.tagline ?? '', subTagline: input.subTagline ?? '', body: input.body ?? '' };
+  const text = await generateText({
+    system: ctx.system,
+    json: true,
+    maxTokens: input.field === 'body' ? 1200 : 300,
+    prompt: [
+      FIELD_TASK[input.field],
+      input.field === 'body' ? playbook?.body : '',
+      input.field === 'body' && preset && `Primary platform: ${preset.label}.${limit ? ` Keep the copy under ${limit} characters.` : ''}`,
+      knowledgeBlock(ctx.facts),
+      claimBlock(ctx.claims),
+      draftSnapshot(current),
+      input.field === 'body'
+        ? 'Respond as JSON: {"text":"...","hashtags":["#One","#Two"]}. hashtags are suggestions and must not be required inside text.'
+        : 'Respond as JSON: {"text":"..."}',
+    ].filter(Boolean).join('\n\n'),
+    mock: () => {
+      const product = ctx.productNames[0] ?? ctx.companyName;
+      const replacement = input.field === 'body'
+        ? mockContent('SOCIAL_POST', input.brief, ctx, limit)
+        : input.field === 'brief'
+          ? input.brief
+          : `${product} ${input.field}`;
+      return JSON.stringify({ text: replacement, hashtags: input.field === 'body' ? [`#${ctx.companyName}`, `#${product}`] : [] });
+    },
+  });
+  const parsed = parseJson<{ text?: string; hashtags?: string[] }>(text);
+  const cap = SOCIAL_FIELD_WORD_CAP[input.field];
+  const raw = String(parsed.text ?? '').trim();
+  const next = cap ? limitWords(raw, cap) : raw;
+  const kept = current[input.field];
+  const value = next || kept;
+  const warnings = input.field === 'body' ? validateOutput(value, warningContext(ctx, playbook, limit)) : [];
+  if (input.field === 'body' && ctx.droppedInternal) warnings.push({ code: 'INTERNAL_OMITTED', message: 'Internal knowledge was left out because this draft used a cloud model.' });
+  return {
+    text: value,
+    warnings,
+    hashtags: input.field === 'body' ? suggestedHashtags(parsed.hashtags, ctx) : [],
+  };
+}
+
+/**
+ * Rewrites one selected passage. The caller puts it back into the field, so the rest of the text stays.
+ */
+export async function rephrasePassage(input: { orgId?: string; text: string; field: string; contentType?: ContentType }): Promise<{ text: string }> {
+  const orgId = input.orgId ?? (await getDefaultOrgId());
+  const ctx = await buildBrandContext(orgId, input.text);
+  const playbook = input.contentType ? await selectPlaybook(orgId, null, input.contentType) : null;
+  const text = await generateText({
+    system: ctx.system,
+    maxTokens: 600,
+    prompt: [
+      'Rephrase only the passage below. Keep the meaning, names, and numbers. Match the surrounding voice. Return the new passage alone, with no quotes and no explanation.',
+      playbook?.body,
+      `Field: ${input.field}`,
+      `Passage:\n${input.text}`,
+    ].filter(Boolean).join('\n\n'),
+    mock: () => input.text.replace(/\.$/, '') + ' — rephrased.',
+  });
+  const cleaned = text.trim().replace(/^["']|["']$/g, '');
+  return { text: cleaned || input.text };
+}
+
+/** Tags that fit this post. Nothing here is written into the copy until someone adds it. */
+export async function suggestSocialHashtags(input: {
+  orgId?: string;
+  brief: string;
+  platform?: Platform;
+  productIds?: string[];
+  title?: string;
+  tagline?: string;
+  subTagline?: string;
+  body?: string;
+}): Promise<{ hashtags: string[] }> {
+  const orgId = input.orgId ?? (await getDefaultOrgId());
+  const ctx = await buildBrandContext(orgId, input.brief, input.productIds, input.platform);
+  const preset = input.platform ? PLATFORM_PRESETS[input.platform] : null;
+  const text = await generateText({
+    system: ctx.system,
+    json: true,
+    maxTokens: 300,
+    prompt: [
+      'Suggest 6 hashtags that fit this social post. Mix the brand, the topic, and tags a reader would search. No spaces inside a tag.',
+      preset && `Primary platform: ${preset.label}.`,
+      knowledgeBlock(ctx.facts),
+      draftSnapshot({
+        brief: input.brief,
+        title: input.title ?? '',
+        tagline: input.tagline ?? '',
+        subTagline: input.subTagline ?? '',
+        body: input.body ?? '',
+      }),
+      'Respond as JSON: {"hashtags":["#One","#Two"]}',
+    ].filter(Boolean).join('\n\n'),
+    mock: () => JSON.stringify({ hashtags: [`#${ctx.companyName}`, `#${ctx.productNames[0] ?? 'Launch'}`, '#Robotics'] }),
+  });
+  const parsed = parseJson<{ hashtags?: string[] }>(text);
+  return { hashtags: suggestedHashtags(parsed.hashtags, ctx) };
 }
 
 export async function generateContent(input: {

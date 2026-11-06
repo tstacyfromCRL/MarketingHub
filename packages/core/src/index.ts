@@ -22,6 +22,8 @@ export * from './connectors/registry';
 export * from './connectors/shopify';
 export * from './connectors/csv';
 export * from './scrape';
+export * from './articleSearch';
+export * from './articleSearchRun';
 export * from './marketLinks';
 export * from './assets';
 export * from './generation';

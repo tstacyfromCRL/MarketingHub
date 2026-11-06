@@ -18,6 +18,8 @@ export interface JobPayloads {
   'scrape-product-links': { productId: string };
   'send-email': { to: string; subject: string; text: string; html?: string };
   'send-slack': { slackUserId: string; text: string };
+  'sweep-article-searches': { orgId: string };
+  'run-article-search': { orgId: string; searchId: string };
 }
 export type JobName = keyof JobPayloads;
 export type JobHandlers = { [K in JobName]: (data: JobPayloads[K]) => Promise<void> };
@@ -75,7 +77,7 @@ export async function enqueue<K extends JobName>(name: K, data: JobPayloads[K], 
   setTimeout(() => void run(1), opts.delayMs ?? 0);
 }
 
-const ORG_JOBS = new Set<JobName>(['recrawl-sources', 'sync-products', 'watch-knowledge']);
+const ORG_JOBS = new Set<JobName>(['recrawl-sources', 'sync-products', 'watch-knowledge', 'sweep-article-searches']);
 
 /** Repeating jobs run for the one company this server is configured for. */
 async function repeatPayload(name: JobName): Promise<JobPayloads[JobName]> {

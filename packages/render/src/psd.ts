@@ -55,6 +55,8 @@ export async function toPsd(doc: DesignDoc, resolve: ImageResolver): Promise<Buf
           fillColor: { r: color.r * 255, g: color.g * 255, b: color.b * 255 },
           leading: layer.fontSize * layer.lineHeight,
           autoLeading: false,
+          tracking: layer.letterSpacing ? Math.round((layer.letterSpacing / layer.fontSize) * 1000) : undefined,
+          underline: layer.underline || undefined,
         },
         paragraphStyle: { justification: layer.align },
       };

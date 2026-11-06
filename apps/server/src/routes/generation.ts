@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@mh/db';
-import { contentDocSchema, generateImageSchema, generateSocialDraftSchema, generateTextSchema, paletteInOrder } from '@mh/shared';
-import { brandProfile, generateAndStoreImage, generateContent, generateSocialDraft, recordEvent } from '@mh/core';
-import { authenticate, forbidden, isManager } from '../http';
+import { contentDocSchema, generateImageSchema, generateSocialDraftSchema, generateTextSchema, paletteInOrder, rephraseSchema, rewriteSocialFieldSchema, suggestHashtagsSchema, voiceFeedbackNoteSchema, voiceFeedbackSchema } from '@mh/shared';
+import { brandProfile, generateAndStoreImage, generateContent, generateSocialDraft, getDefaultOrgId, recordEvent, rephrasePassage, rewriteSocialField, suggestSocialHashtags } from '@mh/core';
+import { authenticate, forbidden, isManager, notFound } from '../http';
 
 export async function generationRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
@@ -17,6 +17,48 @@ export async function generationRoutes(app: FastifyInstance) {
   app.post('/generate/social-draft', async (req) => {
     const body = generateSocialDraftSchema.parse(req.body);
     return generateSocialDraft(body);
+  });
+
+  // One field at a time, so Re-Write does not replace the rest of the draft.
+  app.post('/generate/social-field', async (req) => {
+    const body = rewriteSocialFieldSchema.parse(req.body);
+    return rewriteSocialField(body);
+  });
+
+  app.post('/generate/hashtags', async (req) => {
+    const body = suggestHashtagsSchema.parse(req.body);
+    return suggestSocialHashtags(body);
+  });
+
+  // The selected passage only. The client swaps it back into the field.
+  app.post('/generate/rephrase', async (req) => {
+    const body = rephraseSchema.parse(req.body);
+    return rephrasePassage(body);
+  });
+
+  // A thumb is stored immediately. The note can arrive with it or just after.
+  app.post('/generate/feedback', async (req) => {
+    const body = voiceFeedbackSchema.parse(req.body);
+    const row = await prisma.voiceFeedback.create({
+      data: {
+        organizationId: await getDefaultOrgId(),
+        userId: req.user.id,
+        field: body.field,
+        text: body.text.slice(0, 1500),
+        rating: body.rating,
+        note: body.note,
+      },
+    });
+    return { id: row.id };
+  });
+
+  app.patch<{ Params: { id: string } }>('/generate/feedback/:id', async (req) => {
+    const body = voiceFeedbackNoteSchema.parse(req.body);
+    const row = await prisma.voiceFeedback.findUnique({ where: { id: req.params.id } });
+    if (!row) throw notFound('Feedback not found');
+    if (row.userId !== req.user.id && !isManager(req.user)) throw forbidden();
+    await prisma.voiceFeedback.update({ where: { id: row.id }, data: { note: body.note } });
+    return { id: row.id };
   });
 
   app.post('/generate/image', async (req) => {

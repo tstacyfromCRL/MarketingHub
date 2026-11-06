@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 
 /**
- * Shared state for the chat panel at the bottom of the window. Screens (such as a post's Rewrite
- * button) use `openWith` to open the panel with a starting message for the person to finish.
+ * Shared state for the chat drawer. Screens (such as a post's Rewrite button) use `openWith`
+ * to open the drawer with a starting message for the person to finish.
  */
 interface AssistantState {
   open: boolean;

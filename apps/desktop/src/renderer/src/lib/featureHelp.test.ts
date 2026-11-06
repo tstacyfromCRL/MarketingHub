@@ -4,11 +4,28 @@ import { helpForPath } from './featureHelp';
 describe('feature help', () => {
   it('explains each main screen, including a page inside that screen', () => {
     expect(helpForPath('/').title).toBe('Home');
+    expect(helpForPath('/').how).toMatch(/bottom right/);
+    expect(helpForPath('/').how).toMatch(/chat drawer/);
+    expect(helpForPath('/').how).toMatch(/Customize/);
+    expect(helpForPath('/').how).toMatch(/3 columns by 2 rows/);
+    expect(helpForPath('/').how).toMatch(/Team events/);
     expect(helpForPath('/tasks/task-1').title).toBe('Tasks');
     expect(helpForPath('/posts/post-1').title).toBe('Post');
     expect(helpForPath('/designs/new').title).toBe('Design editor');
+    expect(helpForPath('/designs/new').how).toMatch(/Align/);
+    expect(helpForPath('/designs/new').how).toMatch(/Guides/);
+    expect(helpForPath('/designs/new').how).toMatch(/Pen/);
+    expect(helpForPath('/designs/new').how).toMatch(/Nodes/);
+    expect(helpForPath('/designs/new').how).toMatch(/tangent/);
     expect(helpForPath('/products/sku-1').title).toBe('Products');
     expect(helpForPath('/campaigns/new').title).toBe('Campaigns');
+    expect(helpForPath('/studio').how).toMatch(/Save as Draft/);
+    expect(helpForPath('/studio').how).toMatch(/Re-Write/);
+    expect(helpForPath('/studio').how).toMatch(/Rephrase selection/);
+    expect(helpForPath('/studio').how).toMatch(/Thumbs up/);
+    expect(helpForPath('/posts/post-1').how).toMatch(/Rephrase selection/);
+    expect(helpForPath('/content/doc-1').how).toMatch(/Thumbs up/);
+    expect(helpForPath('/studio').how).toMatch(/hashtags/);
     expect(helpForPath('/studio').how).toMatch(/Drafts/);
     expect(helpForPath('/studio').how).toMatch(/PNG/);
     expect(helpForPath('/studio').how).toMatch(/Edit opens the post/);
@@ -21,6 +38,8 @@ describe('feature help', () => {
     expect(helpForPath('/knowledge/playbooks').title).toBe('Playbooks');
     expect(helpForPath('/knowledge/catalog').purpose).toMatch(/product/i);
     expect(helpForPath('/knowledge/search').title).toBe('What the AI knows');
+    expect(helpForPath('/knowledge/articles').title).toBe('Articles');
+    expect(helpForPath('/posts/post-1').how).toMatch(/saved article/);
   });
 
   it('picks the settings tab you are on', () => {

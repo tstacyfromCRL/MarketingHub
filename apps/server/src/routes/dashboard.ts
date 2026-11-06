@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@mh/db';
 import { quickLinkSchema } from '@mh/shared';
+import { getDefaultOrgId } from '@mh/core';
 import { authenticate, forbidden, isManager, notFound } from '../http';
 
 export async function dashboardRoutes(app: FastifyInstance) {
@@ -12,7 +13,8 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const in14 = new Date(now.getTime() + 14 * 86_400_000);
     // The last stage on the board is treated as "done".
     const doneStage = await prisma.stage.findFirst({ orderBy: { order: 'desc' }, select: { id: true } });
-    const [myTasks, upcomingPosts, activity, links, awaitingReview, unread] = await Promise.all([
+    const orgId = await getDefaultOrgId();
+    const [myTasks, upcomingPosts, activity, links, awaitingReview, unread, drafts, draftCount, notifications, campaigns, articleHits, teamEvents] = await Promise.all([
       prisma.task.findMany({
         where: { assigneeId: req.user.id, active: true, stageId: doneStage ? { not: doneStage.id } : undefined },
         include: { stage: true, categories: true },
@@ -29,8 +31,56 @@ export async function dashboardRoutes(app: FastifyInstance) {
       prisma.quickLink.findMany({ where: { OR: [{ userId: null }, { userId: req.user.id }] }, orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }] }),
       isManager(req.user) ? prisma.post.count({ where: { status: { in: ['CREATOR_APPROVED', 'IN_REVIEW'] } } }) : Promise.resolve(0),
       prisma.notification.count({ where: { userId: req.user.id, readAt: null } }),
+      // Only this person's drafts. Anything already sent for approval leaves the Drafts list.
+      prisma.post.findMany({
+        where: { status: 'DRAFT', creatorId: req.user.id },
+        select: { id: true, title: true, platforms: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      }),
+      prisma.post.count({ where: { status: 'DRAFT', creatorId: req.user.id } }),
+      prisma.notification.findMany({
+        where: { userId: req.user.id, readAt: null },
+        select: { id: true, title: true, body: true, link: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      }),
+      // Campaigns that have not finished yet, soonest first.
+      prisma.campaign.findMany({
+        where: { endDate: { gte: now } },
+        select: { id: true, name: true, startDate: true, endDate: true, status: true, _count: { select: { posts: true } } },
+        orderBy: { startDate: 'asc' },
+        take: 5,
+      }),
+      // Articles that were filed to the knowledge base, most recently filed first.
+      prisma.articleHit.findMany({
+        where: { sourceId: { not: null }, search: { organizationId: orgId } },
+        select: { id: true, title: true, url: true, source: { select: { createdAt: true } } },
+        orderBy: { source: { createdAt: 'desc' } },
+        take: 5,
+      }),
+      // Time off, shoots, and events for the whole team that overlap the next two weeks.
+      prisma.scheduleEvent.findMany({
+        where: { startsAt: { lte: in14 }, endsAt: { gte: now } },
+        select: { id: true, title: true, startsAt: true, endsAt: true, allDay: true, user: { select: { id: true, name: true } } },
+        orderBy: { startsAt: 'asc' },
+        take: 15,
+      }),
     ]);
-    return { myTasks, upcomingPosts, activity, links, awaitingReview, unreadNotifications: unread };
+    return {
+      myTasks,
+      upcomingPosts,
+      activity,
+      links,
+      awaitingReview,
+      unreadNotifications: unread,
+      drafts,
+      draftCount,
+      notifications,
+      campaigns,
+      articles: articleHits.map((hit) => ({ id: hit.id, title: hit.title, url: hit.url, filedAt: hit.source?.createdAt ?? null })),
+      teamEvents,
+    };
   });
 
   app.post('/quick-links', async (req) => {

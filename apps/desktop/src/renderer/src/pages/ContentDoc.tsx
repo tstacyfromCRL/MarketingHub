@@ -5,6 +5,7 @@ import { ArrowLeft, Copy, Download, Sparkles, Trash2 } from 'lucide-react';
 import type { ContentType } from '@mh/shared';
 import { api, errorMessage, queryClient } from '../lib/api';
 import { formatWhen } from '../lib/format';
+import { VoiceField } from '../components/VoiceField';
 import { Button, Card, ErrorText, Field, Spinner } from '../components/ui';
 
 interface Doc { id: string; type: ContentType; title: string; body: string; updatedAt: string }
@@ -61,7 +62,7 @@ export function ContentDocPage() {
         <Button size="sm" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>Save</Button>
       </div>
       <input className="w-full bg-transparent text-2xl font-semibold outline-none" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <textarea className="input min-h-[55vh] font-mono text-sm leading-relaxed" value={body} onChange={(e) => setBody(e.target.value)} />
+      <VoiceField label="Draft" field={`content.${data.type}`} contentType={data.type} multiline rows={22} value={body} onChange={setBody} />
       <Card>
         <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); revise.mutate(); }}>
           <Field label="Ask AI to revise" className="flex-1"><input className="input" value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder="Make it shorter and add a clear call to action" /></Field>

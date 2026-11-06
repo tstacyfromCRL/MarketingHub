@@ -41,6 +41,28 @@ describe('exporters', () => {
     expect(pdf.startsWith('%PDF')).toBe(true);
   });
 
+  it('keeps a pen path as vectors in SVG, PDF, and IDML', async () => {
+    const curved: DesignDoc = {
+      ...doc,
+      layers: [
+        {
+          id: 'p', name: 'Curve', type: 'path', x: 10, y: 20, width: 20, height: 10, rotation: 0, opacity: 1, visible: true, locked: false,
+          points: [{ x: 0, y: 0, outX: 10, outY: 0 }, { x: 20, y: 10, inX: -10, inY: 0 }],
+          closed: false, fill: 'none', stroke: '#111827', strokeWidth: 4,
+        },
+      ],
+    };
+    const svg = (await exportDesign(curved, 'svg', resolve)).toString();
+    expect(svg).toContain('M 0 0 C 10 0 10 10 20 10');
+    expect(svg).toContain('translate(10 20)');
+    const pdf = await exportDesign(curved, 'pdf', resolve);
+    expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+    const zip = await JSZip.loadAsync(await exportDesign(curved, 'idml', resolve));
+    const spread = await zip.file('Spreads/Spread_sp1.xml')!.async('string');
+    expect(spread).toContain('PathPointType');
+    expect(spread).toContain('Anchor="10 ');
+  });
+
   it('writes an IDML package', async () => {
     const zip = await JSZip.loadAsync(await exportDesign(doc, 'idml', resolve));
     expect(await zip.file('mimetype')!.async('string')).toBe('application/vnd.adobe.indesign-idml-package');

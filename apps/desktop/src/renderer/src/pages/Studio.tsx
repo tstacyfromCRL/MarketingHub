@@ -2,11 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Download, FileText, FolderPlus, Image as ImageIcon, Pencil, Plus, Sparkles, Trash2, Wand2 } from 'lucide-react';
-import { PLATFORMS, PLATFORM_PRESETS, type ContentType, type Platform } from '@mh/shared';
+import { PLATFORMS, PLATFORM_PRESETS, appendHashtag, type ContentType, type Platform, type SocialDraftField } from '@mh/shared';
 import { api, download, errorMessage, fileUrl, queryClient } from '../lib/api';
+import { canSaveSocialDraft, socialDraftTitle } from '../lib/socialDraft';
 import { formatDate, fromLocalInput } from '../lib/format';
 import { useProducts } from '../lib/hooks';
 import type { Asset, Post } from '../lib/types';
+import { ArticleLinkSelect } from '../components/ArticleLinkSelect';
+import { VoiceField } from '../components/VoiceField';
 import { Button, Card, Empty, ErrorText, Field, PageHeader, Spinner, Tabs } from '../components/ui';
 import { CanvaGraphicModal } from '../components/Canva';
 
@@ -78,7 +81,14 @@ export function ProductImagePicker({ productId, value, onChange }: { productId: 
   );
 }
 
-type SocialDraft = { title: string; tagline: string; subTagline: string; body: string; warnings: { code: string; message: string }[] };
+function RewriteButton({ field, rewriting, disabled, onRewrite }: { field: SocialDraftField; rewriting: SocialDraftField | null; disabled?: boolean; onRewrite: (field: SocialDraftField) => void }) {
+  return (
+    <Button type="button" size="sm" variant="ghost" onClick={() => void onRewrite(field)} loading={rewriting === field} disabled={disabled || rewriting !== null}>Re-Write</Button>
+  );
+}
+
+type SocialDraft = { title: string; tagline: string; subTagline: string; body: string; hashtags?: string[]; warnings: { code: string; message: string }[] };
+type FieldRewrite = { text: string; warnings: { code: string; message: string }[]; hashtags: string[] };
 
 function NewPost() {
   const navigate = useNavigate();
@@ -95,6 +105,9 @@ function NewPost() {
   const [subTagline, setSubTagline] = useState('');
   const [body, setBody] = useState('');
   const [warnings, setWarnings] = useState<{ code: string; message: string }[]>([]);
+  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [rewriting, setRewriting] = useState<SocialDraftField | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [productIds, setProductIds] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>(['facebook', 'instagram', 'linkedin']);
@@ -103,7 +116,7 @@ function NewPost() {
   const [assetId, setAssetId] = useState('');
   const [imageQuery, setImageQuery] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'save' | 'canva' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const libraryImages = useQuery({
@@ -124,13 +137,77 @@ function NewPost() {
       setSubTagline(r.subTagline);
       setBody(r.body);
       setWarnings(r.warnings ?? []);
+      setHashtags(r.hashtags ?? []);
       setDraftReady(true);
       setError(null);
     },
   });
 
+  const draftContext = () => ({ brief, productIds, platform: platforms[0], title, tagline, subTagline, body });
+
+  const rewriteField = async (field: SocialDraftField) => {
+    setRewriting(field);
+    setError(null);
+    try {
+      const result = await api.post<FieldRewrite>('/generate/social-field', { field, ...draftContext() });
+      if (field === 'brief') setBrief(result.text);
+      if (field === 'title') setTitle(result.text);
+      if (field === 'tagline') setTagline(result.text);
+      if (field === 'subTagline') setSubTagline(result.text);
+      if (field === 'body') {
+        setBody(result.text);
+        setWarnings(result.warnings ?? []);
+        if (result.hashtags?.length) setHashtags(result.hashtags);
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRewriting(null);
+    }
+  };
+
+  const suggestHashtags = async () => {
+    setSuggesting(true);
+    setError(null);
+    try {
+      const result = await api.post<{ hashtags: string[] }>('/generate/hashtags', draftContext());
+      setHashtags(result.hashtags);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const saveAsDraft = async () => {
+    setBusy('save');
+    setError(null);
+    try {
+      if (!canSaveSocialDraft({ title, tagline, body, platforms })) throw new Error('Write the post copy and choose a platform before saving a draft.');
+      // The copy is the draft. A template and a photo can wait until someone edits the graphic.
+      const post = await api.post<Post>('/posts', {
+        title: socialDraftTitle(title, tagline),
+        body,
+        aiWarnings: warnings,
+        platforms,
+        perPlatformFiles: false,
+        adaptCopy,
+        scheduledAt: fromLocalInput(scheduledAt),
+      });
+      void queryClient.invalidateQueries({ queryKey: ['posts'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      navigate(`/posts/${post.id}`, {
+        state: { notice: 'Saved as a draft. It stays in Drafts until you send it for approval. Add a graphic from this post when you are ready.' },
+      });
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const createAndOpenCanva = async () => {
-    setBusy(true);
+    setBusy('canva');
     setError(null);
     try {
       if (!canva.data?.connected) throw new Error('A manager connects Canva under Settings → Social accounts first.');
@@ -143,7 +220,7 @@ function NewPost() {
         const uploaded = await window.api.library.upload(picked.id, picked.relPath) as Asset;
         libraryAssetId = uploaded.id;
       }
-      const draftTitle = title.trim() || tagline.trim() || 'Social post';
+      const draftTitle = socialDraftTitle(title, tagline);
       const graphic = await api.post<{ id: string; editUrl: string; filled: boolean }>('/canva/graphics', {
         title: draftTitle,
         templateId,
@@ -175,7 +252,7 @@ function NewPost() {
     } catch (err) {
       setError(errorMessage(err));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -184,9 +261,17 @@ function NewPost() {
       <div className="space-y-6 xl:col-span-3">
         <Card title="1. What is this post about?">
           <div className="space-y-4">
-            <Field label="Brief">
-              <textarea className="input" rows={3} value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="Announce our booth at the Spring Expo, highlight the new X200 and invite people to stop by." />
-            </Field>
+            <VoiceField
+              label="Brief"
+              field="social.brief"
+              contentType="SOCIAL_POST"
+              multiline
+              rows={3}
+              value={brief}
+              onChange={setBrief}
+              placeholder="Announce our booth at the Spring Expo, highlight the new X200 and invite people to stop by."
+              action={<Button type="button" size="sm" variant="ghost" onClick={() => void rewriteField('brief')} loading={rewriting === 'brief'} disabled={!brief.trim() || rewriting !== null}>Re-Write</Button>}
+            />
             <Field label="Products to feature">
               <div className="flex flex-wrap gap-1.5">
                 {products.data?.filter((p) => p.active).map((p) => {
@@ -210,16 +295,39 @@ function NewPost() {
             <p className="text-sm text-slate-500">Write with AI first. You can edit every field before the graphic is built.</p>
           ) : (
             <div className="space-y-4">
-              <Field label="Title (internal)"><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
-              <Field label="Tagline" hint="Goes into the first text field on the Canva template.">
-                <input className="input" value={tagline} onChange={(e) => setTagline(e.target.value)} />
-              </Field>
-              <Field label="Sub-tagline" hint="Goes into the second text field on the Canva template.">
-                <input className="input" value={subTagline} onChange={(e) => setSubTagline(e.target.value)} />
-              </Field>
-              <Field label="Post copy" hint={`${body.length} characters`}>
-                <textarea className="input" rows={7} value={body} onChange={(e) => setBody(e.target.value)} />
-              </Field>
+              <VoiceField label="Title (internal)" field="social.title" contentType="SOCIAL_POST" value={title} onChange={setTitle} action={<RewriteButton field="title" rewriting={rewriting} disabled={!brief.trim()} onRewrite={rewriteField} />} />
+              <VoiceField label="Tagline" hint="Goes into the first text field on the Canva template." field="social.tagline" contentType="SOCIAL_POST" value={tagline} onChange={setTagline} action={<RewriteButton field="tagline" rewriting={rewriting} disabled={!brief.trim()} onRewrite={rewriteField} />} />
+              <VoiceField label="Sub-tagline" hint="Goes into the second text field on the Canva template." field="social.subTagline" contentType="SOCIAL_POST" value={subTagline} onChange={setSubTagline} action={<RewriteButton field="subTagline" rewriting={rewriting} disabled={!brief.trim()} onRewrite={rewriteField} />} />
+              <VoiceField label="Post copy" hint={`${body.length} characters`} field="social.body" contentType="SOCIAL_POST" multiline rows={7} value={body} onChange={setBody} action={<RewriteButton field="body" rewriting={rewriting} disabled={!brief.trim()} onRewrite={rewriteField} />} />
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="label mb-0">Suggested hashtags</span>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => void suggestHashtags()} loading={suggesting} disabled={suggesting || rewriting !== null}>New suggestions</Button>
+                </div>
+                {hashtags.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {hashtags.map((tag) => {
+                      const used = appendHashtag(body, tag) === body;
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          disabled={used}
+                          onClick={() => setBody(appendHashtag(body, tag))}
+                          className={`rounded-full border px-2.5 py-0.5 text-xs ${used ? 'border-slate-700 text-slate-500' : 'border-sage/40 text-sage hover:bg-sage/10'}`}
+                          title={used ? 'Already in the post copy' : 'Add to the post copy'}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No suggestions yet.</p>
+                )}
+                <p className="mt-1 text-xs text-slate-500">Click a hashtag to add it to the post copy.</p>
+              </div>
+              <ArticleLinkSelect body={body} onChange={setBody} />
               {warnings.length > 0 && (
                 <ul className="space-y-1 rounded border border-amber-900/60 bg-amber-950/30 px-3 py-2">
                   {warnings.map((warning, index) => <li key={index} className="text-xs text-amber-100">{warning.message}</li>)}
@@ -281,15 +389,24 @@ function NewPost() {
         </Card>
         <ErrorText error={error} />
         <Button
+          variant="secondary"
+          className="w-full"
+          onClick={() => void saveAsDraft()}
+          loading={busy === 'save'}
+          disabled={!draftReady || busy !== null || !canSaveSocialDraft({ title, tagline, body, platforms })}
+        >
+          Save as Draft
+        </Button>
+        <Button
           className="w-full"
           onClick={() => void createAndOpenCanva()}
-          loading={busy}
-          disabled={!draftReady || !title.trim() || !body.trim() || !tagline.trim() || !templateId || !assetId || platforms.length === 0}
+          loading={busy === 'canva'}
+          disabled={busy !== null || !draftReady || !title.trim() || !body.trim() || !tagline.trim() || !templateId || !assetId || platforms.length === 0}
         >
           <Wand2 className="h-4 w-4" /> Create draft & edit in Canva
         </Button>
         <p className="text-xs text-slate-500">
-          Mantis fills the template, opens Canva for you to refine it, then saves the finished graphic when you return. Approve the draft and a manager schedules it.
+          Save as Draft keeps the copy and the platforms without opening Canva. Create draft & edit in Canva fills the template, opens Canva for you to refine it, then saves the finished graphic when you return. Approve the draft and a manager schedules it.
         </p>
       </div>
     </div>

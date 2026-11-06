@@ -194,6 +194,17 @@ export const sourceSchema = z.object({
   recrawlDays: z.number().int().positive().nullable().default(null),
 });
 
+/** null is manual. 1, 7, and 30 match the daily, weekly, and monthly choices. */
+export const articleSearchSchema = z.object({
+  keywords: z.string().trim().min(1).max(300),
+  intervalDays: z.union([z.literal(1), z.literal(7), z.literal(30), z.null()]).default(null),
+});
+export const articleAssignSchema = z.object({
+  scope: z.enum(['company', 'product', 'project']),
+  productId: z.string().min(1).optional(),
+  projectId: z.string().min(1).optional(),
+});
+
 // ---- Company setup ----
 export const ONBOARDING_STEPS = ['name', 'about', 'summary', 'logos', 'colors', 'voice', 'analyze', 'done'] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
@@ -246,6 +257,41 @@ export const generateSocialDraftSchema = z.object({
   brief: z.string().min(1),
   platform: z.enum(PLATFORMS).optional(),
   productIds: z.array(z.string()).default([]),
+});
+const socialFieldContext = {
+  brief: z.string().default(''),
+  title: z.string().default(''),
+  tagline: z.string().default(''),
+  subTagline: z.string().default(''),
+  body: z.string().default(''),
+  platform: z.enum(PLATFORMS).optional(),
+  productIds: z.array(z.string()).default([]),
+};
+/** Re-Write asks for new text for one field and leaves the others alone. */
+export const rewriteSocialFieldSchema = z.object({
+  field: z.enum(['brief', 'title', 'tagline', 'subTagline', 'body']),
+  ...socialFieldContext,
+  brief: z.string().min(1),
+});
+/** Hashtag suggestions for the current draft. They are not written into the copy until chosen. */
+export const suggestHashtagsSchema = z.object(socialFieldContext).extend({
+  brief: z.string().min(1),
+});
+/** Rephrase only the passage the person selected. */
+export const rephraseSchema = z.object({
+  text: z.string().min(1).max(2000),
+  field: z.string().min(1).max(80),
+  contentType: z.enum(CONTENT_TYPES).optional(),
+});
+/** A thumb, and an optional note, on one generated field. */
+export const voiceFeedbackSchema = z.object({
+  field: z.string().min(1).max(80),
+  text: z.string().min(1).max(4000),
+  rating: z.enum(['up', 'down']),
+  note: z.string().max(1000).default(''),
+});
+export const voiceFeedbackNoteSchema = z.object({
+  note: z.string().max(1000),
 });
 export const generateImageSchema = z.object({
   prompt: z.string().min(1),

@@ -53,6 +53,7 @@ model User {
   socialAccounts   SocialAccount[]
   canvaAccounts    CanvaAccount[]
   assistantThreads AssistantThread[]
+  voiceFeedback    VoiceFeedback[]
 }
 
 /// A conversation with the Mantis assistant. Each person sees only their own.
@@ -338,6 +339,9 @@ model Organization {
   confidentialTerms ConfidentialTerm[]
   integrations      IntegrationSetting[]
   marketLinks       MarketLink[]
+  projects          Project[]
+  articleSearches   ArticleSearch[]
+  voiceFeedback     VoiceFeedback[]
 }
 
 enum Sensitivity {
@@ -500,6 +504,9 @@ model Source {
   kind           SourceKind
   /// Set when this page belongs to a product: a documentation link, an upload, or a competitor/partner page.
   productId      String?
+  /// Set when a found article was filed under a project rather than the company or a product.
+  projectId      String?
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
   /// Platform a SAMPLE_POST was published on, if known.
   platform       String?
   title          String       @default("")
@@ -508,16 +515,62 @@ model Source {
   error          String?
   sensitivity    Sensitivity  @default(PUBLIC)
   externalKey    String?
-  /// manual, pack, upload, product-link, or market. A documentation-link refresh only replaces product-link pages.
+  /// manual, pack, upload, product-link, market, or search. A documentation-link refresh only replaces product-link pages.
   origin         String       @default("manual")
   contentHash    String?
   recrawlDays    Int?
   lastCrawledAt  DateTime?
   createdAt      DateTime     @default(now())
+  articleHits    ArticleHit[]
 
   @@unique([organizationId, externalKey])
   @@index([productId])
+  @@index([projectId])
   @@index([organizationId, kind])
+}
+
+/// A named bucket for knowledge that is not the whole company and not one product.
+model Project {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  createdAt      DateTime     @default(now())
+  sources        Source[]
+
+  @@index([organizationId])
+}
+
+/// Keywords to look up on the web. intervalDays null means the search runs only when someone presses the button.
+model ArticleSearch {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  keywords       String
+  /// null manual, 1 daily, 7 weekly, 30 monthly.
+  intervalDays   Int?
+  lastRunAt      DateTime?
+  lastError      String?
+  createdAt      DateTime     @default(now())
+  hits           ArticleHit[]
+
+  @@index([organizationId])
+}
+
+/// One page a keyword search found. It becomes knowledge only after someone files it.
+model ArticleHit {
+  id       String        @id @default(cuid())
+  searchId String
+  search   ArticleSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  title    String
+  url      String
+  snippet  String        @default("")
+  sourceId String?
+  source   Source?       @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  foundAt  DateTime      @default(now())
+
+  @@unique([searchId, url])
+  @@index([sourceId])
 }
 
 /// Embedded text chunks used for retrieval-augmented generation.
@@ -746,6 +799,25 @@ enum VariantStatus {
   PENDING
   POSTED
   FAILED
+}
+
+/// A thumbs up or down on generated copy, plus an optional note, used to steer later drafts.
+model VoiceFeedback {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Which generated field this is, such as social.tagline or content.body.
+  field          String
+  /// The passage they judged. Kept bounded so a later draft can read it.
+  text           String
+  /// up or down
+  rating         String
+  note           String       @default("")
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
 }
 
 /// One per target platform; holds platform-specific copy/graphics and the publish result.

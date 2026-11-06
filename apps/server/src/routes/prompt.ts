@@ -9,7 +9,7 @@ const promptSchema = z.object({
   context: z.string().trim().max(4000).optional(),
 });
 
-/** One sentence at the bottom of the app. It can start a draft or a task, and nothing that sends or removes work. */
+/** Starts a draft or a task from one sentence. Nothing that sends or removes work. */
 export async function promptRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
